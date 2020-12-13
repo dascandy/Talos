@@ -1,10 +1,10 @@
-#include "catch.hpp"
+#include "catch/catch.hpp"
 #include <vector>
 #include <cstdint>
 #include <array>
-#include "tls13.h"
-#include "aes.h"
-#include "sha2.h"
+#include "../src/tls13.h"
+#include "caligo/aes.h"
+#include "caligo/sha.h"
 
 TEST_CASE("GCM first transmission decryption", "[GCM]") {
   /*

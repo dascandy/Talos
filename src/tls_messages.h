@@ -1,7 +1,7 @@
 #pragma once
 
 #include "writer.h"
-#include "x25519.h"
+#include "caligo/x25519.h"
 #include <string>
 #include <vector>
 #include <cstdint>

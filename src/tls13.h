@@ -1,25 +1,38 @@
 #pragma once
 
-#include "sha2.h"
-#include "aes.h"
+#include "caligo/sha.h"
+#include "caligo/aes.h"
 
-#include "hkdf.h"
-#include "gcm.h"
+#include "caligo/hkdf.h"
+#include <cstdio>
 
-template <typename Cipher, typename Hash>
+inline void log_key(const char* name, std::span<const uint8_t> key) {
+  static FILE* sslkeylog = fopen("/home/pebi/sslkeylog.txt", "wb");
+  fprintf(sslkeylog, "%s 0000000000000000000000000000000000000000000000000000000000000000 ", name);
+  for (auto c : key) {
+    fprintf(sslkeylog, "%02x", c);
+  }
+  fprintf(sslkeylog, "\n");
+  fprintf(sslkeylog, "\n");
+  fflush(sslkeylog);
+}
+
+template <template <typename> typename AEAD, typename Cipher, typename Hash>
 struct TLS13 {
   secret<Hash> secret;
   Hash handshake;
   Hash original;
-  GCM<Cipher> s;
-  GCM<Cipher> c;
+  AEAD<Cipher> s;
+  AEAD<Cipher> c;
   TLS13(const std::vector<uint8_t>& sharedSecret, std::vector<uint8_t> handshakeSoFar)
   : secret(HKDF_HandshakeSecret<Hash>(sharedSecret))
   , handshake(handshakeSoFar)
   , original(handshakeSoFar)
-  , s(secret.template get_key_iv<Cipher>(handshake, false, true))
-  , c(secret.template get_key_iv<Cipher>(handshake, true, true))
+  , s(secret.template get_key_iv<Cipher>(original, false, true))
+  , c(secret.template get_key_iv<Cipher>(original, true, true))
   {
+    log_key("CLIENT_HANDSHAKE_TRAFFIC_SECRET", secret.get_traffic_secret(original, true, true));
+    log_key("SERVER_HANDSHAKE_TRAFFIC_SECRET", secret.get_traffic_secret(original, false, true));
   }
   std::vector<uint8_t> notifyServerFinished(std::span<const uint8_t> message, std::span<const uint8_t> serverFinished) {
     std::vector<uint8_t> check = HMAC<Hash>(handshake, secret.get_finished_key(original, false));
@@ -29,13 +42,18 @@ struct TLS13 {
     }
 
     addHandshakeData(message);
-    std::vector<uint8_t> clientFinished = HMAC<Hash>(handshake, secret.get_finished_key(original, true));
-
+    return HMAC<Hash>(handshake, secret.get_finished_key(original, true));
+  }
+  std::vector<uint8_t> getHandshakeHash() {
+    return handshake;
+  }
+  void switchToApplicationSecret() {
     secret = HKDF_MasterSecret<Hash>(secret);
     s = secret.template get_key_iv<Cipher>(handshake, false);
     c = secret.template get_key_iv<Cipher>(handshake, true);
 
-    return clientFinished;
+    log_key("CLIENT_TRAFFIC_SECRET_0", secret.get_traffic_secret(handshake, true, false));
+    log_key("SERVER_TRAFFIC_SECRET_0", secret.get_traffic_secret(handshake, false, false));
   }
   void updateTrafficSecrets() {
     secret = HKDF_UpdateSecret(secret);
