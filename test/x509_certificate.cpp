@@ -157,9 +157,7 @@ TEST_CASE("Can parse DER Lets Encrypt root cert") {
   CHECK(c.subject == c.issuer);
 
   // The information matches what gcr-viewer shows
-  CHECK(c.subject.country == "US");
-  CHECK(c.subject.organization == "Internet Security Research Group");
-  CHECK(c.subject.common_name == "ISRG Root X1");
+  CHECK(c.subject == "C=US O=Internet Security Research Group CN=ISRG Root X1");
 
   CHECK(c.validity_start == 1433415878); // 2015-06-04 in unix time
   CHECK(c.validity_end == 2064567878); // 2035-06-04 in unix time
@@ -205,9 +203,7 @@ TEST_CASE("Can parse PEM Lets Encrypt root cert") {
   CHECK(c.subject == c.issuer);
 
   // The information matches what gcr-viewer shows
-  CHECK(c.subject.country == "US");
-  CHECK(c.subject.organization == "Internet Security Research Group");
-  CHECK(c.subject.common_name == "ISRG Root X1");
+  CHECK(c.subject == "C=US O=Internet Security Research Group CN=ISRG Root X1");
 
   CHECK(c.validity_start == 1433415878); // 2015-06-04 in unix time
   CHECK(c.validity_end == 2064567878); // 2035-06-04 in unix time

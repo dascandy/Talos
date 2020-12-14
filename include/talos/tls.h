@@ -37,6 +37,8 @@ enum class TlsError : uint16_t {
   no_application_protocol = 120,
 };
 
+std::string to_string(TlsError error);
+
 struct TlsClientStateHandle {
   TlsClientState* state;
   enum class AuthenticationState : uint8_t {
@@ -63,8 +65,8 @@ struct TlsClientStateHandle {
   }
   AuthenticationState getAuthenticationState();
   TlsError getError();
-  std::vector<uint8_t> startupExchange(std::span<uint8_t> data);
-  std::vector<uint8_t> receive_decode(std::span<uint8_t> data);
-  std::vector<uint8_t> send_encode(std::span<uint8_t> data);
+  std::vector<uint8_t> startupExchange(std::span<const uint8_t> data);
+  std::vector<uint8_t> receive_decode(std::span<const uint8_t> data);
+  std::vector<uint8_t> send_encode(std::span<const uint8_t> data);
 };
 
