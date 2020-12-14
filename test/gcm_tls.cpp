@@ -2,7 +2,7 @@
 #include <vector>
 #include <cstdint>
 #include <array>
-#include "../src/tls13.h"
+#include "tls13.h"
 #include "caligo/aes.h"
 #include "caligo/sha2.h"
 

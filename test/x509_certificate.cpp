@@ -1,4 +1,4 @@
-#include "../src/x509_certificate.h"
+#include "x509_certificate.h"
 #include <catch/catch.hpp>
 
 TEST_CASE("Can parse DER Lets Encrypt root cert") {

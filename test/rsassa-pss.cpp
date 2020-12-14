@@ -1,7 +1,7 @@
 #include <caligo/rsa.h>
 #include <caligo/sha1.h>
 #include <caligo/sha2.h>
-#include "../src/x509_certificate.h"
+#include "x509_certificate.h"
 #include <catch/catch.hpp>
 
 template <size_t Bits, typename Hash>
