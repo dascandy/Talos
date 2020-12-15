@@ -15,6 +15,7 @@ object_id object_id::X509NameParts::Locality = std::span<const uint8_t>{{ 0x55, 
 object_id object_id::X509NameParts::StateOrProvince = std::span<const uint8_t>{{ 0x55, 0x04, 0x08 }};
 object_id object_id::X509NameParts::StreetAddress = std::span<const uint8_t>{{ 0x55, 0x04, 0x09 }};
 object_id object_id::X509NameParts::Organization = std::span<const uint8_t>{{ 0x55, 0x04, 0x0a }};
+object_id object_id::X509NameParts::OrganizationIdentifier = std::span<const uint8_t>{{ 0x55, 0x04, 0x61 }};
 object_id object_id::X509NameParts::OrganizationalUnit = std::span<const uint8_t>{{ 0x55, 0x04, 0x0b }};
 object_id object_id::X509NameParts::Title = std::span<const uint8_t>{{ 0x55, 0x04, 0x0c }};
 object_id object_id::X509NameParts::GivenName = std::span<const uint8_t>{{ 0x55, 0x04, 0x2a }};
@@ -60,6 +61,7 @@ bool RsaPubkey::validateSignature(std::vector<uint8_t> data, std::span<const uin
 }
 
 bool RsaPubkey::validateRsaSsaPss(std::span<const uint8_t> message, std::span<const uint8_t> signature) const {
+  for (auto& c : message) printf("%02x ", c); printf("\n");
   return validateRsaSsaPss<4096, SHA2<256>, Caligo::MGF1<SHA2<256>>>(pubkey, message, signature);
 }
 
@@ -147,7 +149,13 @@ x509name parseDer<x509name>(asn1_view& data) {
       rv.givenname = str;
     } else if (oid == object_id::X509NameParts::EmailAddress) {
       rv.emailaddress = str;
+    } else if (oid == object_id::X509NameParts::OrganizationIdentifier) {
+      rv.organizationIdentifier = str;
     } else {
+      for (auto& c : oid.data) {
+        printf("%02x ", c);
+      }
+      printf("\n");
       FAIL();
     }
   }

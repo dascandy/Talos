@@ -10,7 +10,6 @@
 using x509date = uint64_t;
 using x509id = std::vector<uint8_t>;
 
-// Spaceship didn't work for some stupid reason. No idea.
 struct x509name {
   std::string common_name;
   std::string country;
@@ -18,6 +17,7 @@ struct x509name {
   std::string givenname;
   std::string locality;
   std::string organization;
+  std::string organizationIdentifier;
   std::string organizationalunit;
   std::string serialnumber;
   std::string state;
@@ -25,34 +25,6 @@ struct x509name {
   std::string surname;
   std::string title;
 
-  bool operator<(const x509name&r) const { 
-    if (common_name < r.common_name) return true;
-    if (common_name > r.common_name) return false;
-    if (country < r.country) return true;
-    if (country > r.country) return false;
-    if (emailaddress < r.emailaddress) return true;
-    if (emailaddress > r.emailaddress) return false;
-    if (givenname < r.givenname) return true;
-    if (givenname > r.givenname) return false;
-    if (locality < r.locality) return true;
-    if (locality > r.locality) return false;
-    if (organization < r.organization) return true;
-    if (organization > r.organization) return false;
-    if (organizationalunit < r.organizationalunit) return true;
-    if (organizationalunit > r.organizationalunit) return false;
-    if (serialnumber < r.serialnumber) return true;
-    if (serialnumber > r.serialnumber) return false;
-    if (state < r.state) return true;
-    if (state > r.state) return false;
-    if (streetaddress < r.streetaddress) return true;
-    if (streetaddress > r.streetaddress) return false;
-    if (surname < r.surname) return true;
-    if (surname > r.surname) return false;
-    if (title < r.title) return true;
-    if (title > r.title) return false;
-    return false;
-  }
-  bool operator==(const x509name&) const = default;
   friend std::string to_string(const x509name& name) {
     std::string accum;
     if (!name.serialnumber.empty()) accum += "S#=" + name.serialnumber + " ";
@@ -68,6 +40,7 @@ struct x509name {
     if (!name.title.empty()) accum += "T=" + name.title + " ";
 
     if (!name.organization.empty()) accum += "O=" + name.organization + " ";
+    if (!name.organizationIdentifier.empty()) accum += "OI=" + name.organizationIdentifier + " ";
     if (!name.organizationalunit.empty()) accum += "OU=" + name.organizationalunit + " ";
 
     if (!name.common_name.empty()) accum += "CN=" + name.common_name + " ";
@@ -94,6 +67,7 @@ struct object_id {
     static object_id StateOrProvince;
     static object_id StreetAddress;
     static object_id Organization;
+    static object_id OrganizationIdentifier;
     static object_id OrganizationalUnit;
     static object_id Title;
     static object_id GivenName;

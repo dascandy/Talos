@@ -24,6 +24,10 @@ std::optional<x509certificate*> Truststore::get(const std::string& name) {
   return &it->second;
 }
 
+void Truststore::addCertificate(x509certificate cert) {
+  trusted_certs[cert.subject] = std::move(cert);
+}
+
 // RFC 5280, chapter 6: Certificate validation
 // Updated to support nonlinearity
 // Goal: Determine whether or not untrustedCertificates[0] is trustable.

@@ -10,7 +10,6 @@
 std::vector<uint8_t> clientHello(const std::string& hostname, const ec_value& pubkey) {
   writer header;
   header.add16be(0x0303);
-  header.addpadding(0x20, 0x00);
   for (uint8_t n = 0; n < 32; n++) {
     header.add8(n);
   }
@@ -21,7 +20,8 @@ std::vector<uint8_t> clientHello(const std::string& hostname, const ec_value& pu
 
   writer suites;
   suites.add16be(0x1301); // aes128sha256
-//  suites.add16be(0x1302); // aes256sha384
+  suites.add16be(0x1302); // aes256sha384
+  suites.add16be(0x1303); // aes256sha384
   header.add16be(suites.size());
   header.add(suites);
 
@@ -41,7 +41,8 @@ std::vector<uint8_t> clientHello(const std::string& hostname, const ec_value& pu
   // Supported groups
   writer groups;
   groups.add16be(0x1D); // x25519
-//  groups.add16be(0x17); // secp256r1
+  groups.add16be(0x17); // secp256r1
+  groups.add16be(0x18); // secp384r1 ????
   extensions.add16be(0x0a);
   extensions.add16be(groups.size() + 2);
   extensions.add16be(groups.size());
@@ -57,6 +58,7 @@ std::vector<uint8_t> clientHello(const std::string& hostname, const ec_value& pu
   sigalgs.add16be(0x0501); // RSA-PKCS1-SHA384
   sigalgs.add16be(0x0806); // RSA-PSS-RSAE-SHA512
   sigalgs.add16be(0x0601); // RSA-PKCS1-SHA512
+  sigalgs.add16be(0x0201); // ulfheim special
   extensions.add16be(0x0d);
   extensions.add16be(sigalgs.size() + 2);
   extensions.add16be(sigalgs.size());
