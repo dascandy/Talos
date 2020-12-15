@@ -1,6 +1,6 @@
 #include <variant>
 #include "caligo/random.h"
-#include "caligo/sha.h"
+#include "caligo/sha2.h"
 #include "caligo/hkdf.h"
 #include "caligo/aes.h"
 #include "caligo/ghash.h"
@@ -16,6 +16,11 @@
 #include "truststore.h"
 #include <sys/mman.h>
 #include "TlsClientState.h"
+
+std::string to_string(TlsError error) {
+  (void)error;
+  return "FAIL";
+}
 
 namespace {
   template <typename T>
@@ -105,15 +110,15 @@ TlsError TlsClientStateHandle::getError() {
   return state->getError();
 }
 
-std::vector<uint8_t> TlsClientStateHandle::startupExchange(std::span<uint8_t> data) {
+std::vector<uint8_t> TlsClientStateHandle::startupExchange(std::span<const uint8_t> data) {
   return state->startupExchange(data);
 }
 
-std::vector<uint8_t> TlsClientStateHandle::receive_decode(std::span<uint8_t> data) {
+std::vector<uint8_t> TlsClientStateHandle::receive_decode(std::span<const uint8_t> data) {
   return state->receive_decode(data);
 }
 
-std::vector<uint8_t> TlsClientStateHandle::send_encode(std::span<uint8_t> data) {
+std::vector<uint8_t> TlsClientStateHandle::send_encode(std::span<const uint8_t> data) {
   return state->send_encode(data);
 }
 

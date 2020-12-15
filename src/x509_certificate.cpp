@@ -2,7 +2,7 @@
 #include "asn1.h"
 #include <caligo/bignum.h>
 #include <caligo/base64.h>
-#include <caligo/sha.h>
+#include <caligo/sha2.h>
 #include <optional>
 #include "truststore.h"
 #include <caligo/pkcs1.h>
@@ -38,13 +38,13 @@ object_id object_id::SignatureType::RsaSHA512 = std::span<const uint8_t>{{0x2a, 
 std::vector<uint8_t> getHashedData(object_id oid, std::span<const uint8_t> data, size_t requestedSize) {
   if (oid == object_id::SignatureType::EcdsaSHA256 ||
       oid == object_id::SignatureType::RsaSHA256) {
-    return Caligo::PKCS1<SHA<256>>(data, requestedSize);
+    return Caligo::PKCS1<SHA2<256>>(data, requestedSize);
   } else if (oid == object_id::SignatureType::EcdsaSHA384 ||
              oid == object_id::SignatureType::RsaSHA384) {
-    return Caligo::PKCS1<SHA<384>>(data, requestedSize);
+    return Caligo::PKCS1<SHA2<384>>(data, requestedSize);
   } else if (oid == object_id::SignatureType::EcdsaSHA512 ||
              oid == object_id::SignatureType::RsaSHA512) {
-    return Caligo::PKCS1<SHA<512>>(data, requestedSize);
+    return Caligo::PKCS1<SHA2<512>>(data, requestedSize);
   }
   printf("%s:%d\n", __FILE__, __LINE__);
   abort();
@@ -60,7 +60,7 @@ bool RsaPubkey::validateSignature(std::vector<uint8_t> data, std::span<const uin
 }
 
 bool RsaPubkey::validateRsaSsaPss(std::span<const uint8_t> message, std::span<const uint8_t> signature) const {
-  return validateRsaSsaPss<4096, SHA<256>, Caligo::MGF1<SHA<256>>>(pubkey, message, signature);
+  return validateRsaSsaPss<4096, SHA2<256>, Caligo::MGF1<SHA2<256>>>(pubkey, message, signature);
 }
 
 template <typename T>

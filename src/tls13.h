@@ -1,6 +1,5 @@
 #pragma once
 
-#include "caligo/sha.h"
 #include "caligo/aes.h"
 
 #include "caligo/hkdf.h"
