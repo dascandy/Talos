@@ -61,7 +61,6 @@ bool RsaPubkey::validateSignature(std::vector<uint8_t> data, std::span<const uin
 }
 
 bool RsaPubkey::validateRsaSsaPss(std::span<const uint8_t> message, std::span<const uint8_t> signature) const {
-  for (auto& c : message) printf("%02x ", c); printf("\n");
   return validateRsaSsaPss<4096, SHA2<256>, Caligo::MGF1<SHA2<256>>>(pubkey, message, signature);
 }
 
@@ -152,10 +151,6 @@ x509name parseDer<x509name>(asn1_view& data) {
     } else if (oid == object_id::X509NameParts::OrganizationIdentifier) {
       rv.organizationIdentifier = str;
     } else {
-      for (auto& c : oid.data) {
-        printf("%02x ", c);
-      }
-      printf("\n");
       FAIL();
     }
   }
