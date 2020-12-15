@@ -33,15 +33,8 @@ struct TLS13 {
     log_key("CLIENT_HANDSHAKE_TRAFFIC_SECRET", secret.get_traffic_secret(original, true, true));
     log_key("SERVER_HANDSHAKE_TRAFFIC_SECRET", secret.get_traffic_secret(original, false, true));
   }
-  std::vector<uint8_t> notifyServerFinished(std::span<const uint8_t> message, std::span<const uint8_t> serverFinished) {
-    std::vector<uint8_t> check = HMAC<Hash>(handshake, secret.get_finished_key(original, false));
-    if (check.size() != serverFinished.size() || memcmp(check.data(), serverFinished.data(), check.size()) != 0) {
-      fprintf(stderr, "Invalid serverFinished\n");
-      return {};
-    }
-
-    addHandshakeData(message);
-    return HMAC<Hash>(handshake, secret.get_finished_key(original, true));
+  std::vector<uint8_t> handshake_hmac(bool client) {
+    return HMAC<Hash>(handshake, secret.get_finished_key(original, client));
   }
   std::vector<uint8_t> getHandshakeHash() {
     return handshake;

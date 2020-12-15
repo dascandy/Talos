@@ -40,7 +40,7 @@ struct NullCipher {
   std::vector<uint8_t> getHandshakeHash() {
     return {};
   }
-  std::vector<uint8_t> notifyServerFinished(std::span<const uint8_t>, std::span<const uint8_t>) {
+  std::vector<uint8_t> handshake_hmac(bool) {
     return {};
   }
   void switchToApplicationSecret() {}
@@ -254,11 +254,16 @@ struct TlsClientState {
       return {};
     }
 
-    std::vector<uint8_t> hmac = std::visit([&](auto& c){ return c.notifyServerFinished(message, serverDigest);}, cipher);
-    if (hmac.empty()) {
+    std::vector<uint8_t> check = std::visit([&](auto& c) { return c.handshake_hmac(false); }, cipher);
+    if (check.size() != serverDigest.size() || memcmp(check.data(), serverDigest.data(), check.size()) != 0) {
       state = TlsClientStateHandle::AuthenticationState::Disconnected;
       return {};
     }
+
+    std::vector<uint8_t> hmac = std::visit([&](auto& c) -> std::vector<uint8_t> { 
+      c.addHandshakeData(message); 
+      return c.handshake_hmac(true);
+    }, cipher);
 
     std::vector<uint8_t> clientFinished;
     clientFinished.push_back(20);
