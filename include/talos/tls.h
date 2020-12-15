@@ -5,7 +5,7 @@
 #include "reader.h"
 #include "writer.h"
 
-class TlsClientState;
+struct TlsClientState;
 
 enum class TlsError : uint16_t {
   close_notify = 0,

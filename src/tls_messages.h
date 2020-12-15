@@ -11,8 +11,13 @@ std::vector<uint8_t> clientHello(const std::string& hostname, const ec_value& pu
   writer header;
   header.add16be(0x0303);
   header.addpadding(0x20, 0x00);
+  for (uint8_t n = 0; n < 32; n++) {
+    header.add8(n);
+  }
   header.add8(32);
-  header.addpadding(32, 0);
+  for (uint8_t n = 224; n != 0; n++) {
+    header.add8(n);
+  }
 
   writer suites;
   suites.add16be(0x1301); // aes128sha256
