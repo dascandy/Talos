@@ -5,7 +5,7 @@
 #include "reader.h"
 #include "writer.h"
 
-struct TlsClientState;
+struct TlsState;
 
 enum class TlsError : uint16_t {
   close_notify = 0,
@@ -39,8 +39,8 @@ enum class TlsError : uint16_t {
 
 std::string to_string(TlsError error);
 
-struct TlsClientStateHandle {
-  TlsClientState* state;
+struct TlsStateHandle {
+  TlsState* state;
   enum class AuthenticationState : uint8_t {
     New,
     WaitingForServerHello,
@@ -52,13 +52,13 @@ struct TlsClientStateHandle {
     Disconnected,
   };
 
-  TlsClientStateHandle(std::string hostname, uint64_t currentTime);
-  ~TlsClientStateHandle();
-  TlsClientStateHandle(TlsClientStateHandle&& rhs) {
+  TlsStateHandle(std::string hostname, uint64_t currentTime);
+  ~TlsStateHandle();
+  TlsStateHandle(TlsStateHandle&& rhs) {
     state = rhs.state;
     rhs.state = nullptr;
   }
-  TlsClientStateHandle& operator=(TlsClientStateHandle&& rhs) {
+  TlsStateHandle& operator=(TlsStateHandle&& rhs) {
     state = rhs.state;
     rhs.state = nullptr;
     return *this;

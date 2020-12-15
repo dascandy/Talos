@@ -15,7 +15,7 @@
 #include "x509_certificate.h"
 #include "truststore.h"
 #include <sys/mman.h>
-#include "TlsClientState.h"
+#include "TlsState.h"
 
 std::string to_string(TlsError error) {
   (void)error;
@@ -57,7 +57,7 @@ namespace {
       for (size_t n = 0; n < 32; n++) {
         if (used & (1 << n)) continue;
         used ^= 1 << n;
-        return (void*)(base + n * sizeof(TlsClientState));
+        return (void*)(base + n * sizeof(TlsState));
       }
       return nullptr;
     }
@@ -66,17 +66,17 @@ namespace {
       if (p < base || p > end)
         return false;
 
-      size_t index = ((char*)p - base) / sizeof(TlsClientState);
-      volatile char* p2 = base + index * sizeof(TlsClientState);
+      size_t index = ((char*)p - base) / sizeof(TlsState);
+      volatile char* p2 = base + index * sizeof(TlsState);
       if (p != (char*)p2 || (used & (1 << index)) == 0)
         std::terminate();
       used ^= 1 << index;
-      std::fill(p2, p2 + sizeof(TlsClientState), 0);
+      std::fill(p2, p2 + sizeof(TlsState), 0);
       return true;
     }
   };
   struct TlsStateAllocator {
-    std::vector<SecureSpace<TlsClientState>> locations;
+    std::vector<SecureSpace<TlsState>> locations;
     void* allocate() {
       for (auto& s : locations) {
         if (s.used != 0xFFFFFFFF) {
@@ -94,31 +94,31 @@ namespace {
   } stateAllocator;
 }
 
-TlsClientStateHandle::TlsClientStateHandle(std::string hostname, uint64_t currentTime) {
-  state = new(stateAllocator.allocate()) TlsClientState(hostname, currentTime);
+TlsStateHandle::TlsStateHandle(std::string hostname, uint64_t currentTime) {
+  state = new(stateAllocator.allocate()) TlsState(hostname, currentTime);
 }
 
-TlsClientStateHandle::~TlsClientStateHandle() {
+TlsStateHandle::~TlsStateHandle() {
   stateAllocator.free(state);
 }
 
-TlsClientStateHandle::AuthenticationState TlsClientStateHandle::getAuthenticationState() {
+TlsStateHandle::AuthenticationState TlsStateHandle::getAuthenticationState() {
   return state->getAuthenticationState();
 }
 
-TlsError TlsClientStateHandle::getError() {
+TlsError TlsStateHandle::getError() {
   return state->getError();
 }
 
-std::vector<uint8_t> TlsClientStateHandle::startupExchange(std::span<const uint8_t> data) {
+std::vector<uint8_t> TlsStateHandle::startupExchange(std::span<const uint8_t> data) {
   return state->startupExchange(data);
 }
 
-std::vector<uint8_t> TlsClientStateHandle::receive_decode(std::span<const uint8_t> data) {
+std::vector<uint8_t> TlsStateHandle::receive_decode(std::span<const uint8_t> data) {
   return state->receive_decode(data);
 }
 
-std::vector<uint8_t> TlsClientStateHandle::send_encode(std::span<const uint8_t> data) {
+std::vector<uint8_t> TlsStateHandle::send_encode(std::span<const uint8_t> data) {
   return state->send_encode(data);
 }
 

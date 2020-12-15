@@ -1,5 +1,5 @@
 #include <catch/catch.hpp>
-#include "TlsClientState.h"
+#include "TlsState.h"
 #include "x509_certificate.h"
 
 std::vector<uint8_t> privkey = { 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f };
@@ -43,7 +43,7 @@ TEST_CASE("Full ULFHEIM.NET TLS1.3 connection", "[TLS]") {
   std::span<uint8_t> cert((uint8_t*)ulfheimroot.data(), ulfheimroot.size());
   Truststore::Instance().addCertificate(parseCertificate(cert, CertificateFormat::Pem));
 
-  TlsClientState state("example.ulfheim.net", 1550000000);
+  TlsState state("example.ulfheim.net", 1550000000);
   state.privkey = bignum<256>(privkey);
   std::vector<uint8_t> data;
   data = state.startupExchange(data);
