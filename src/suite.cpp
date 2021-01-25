@@ -17,6 +17,8 @@
 #include <sys/mman.h>
 #include "TlsState.h"
 
+namespace Talos {
+
 std::string to_string(TlsError error) {
   (void)error;
   return "FAIL";
@@ -122,6 +124,7 @@ std::vector<uint8_t> TlsStateHandle::send_encode(std::span<const uint8_t> data) 
   return state->send_encode(data);
 }
 
+}
 
 /**
 TLS 1.3 flow:

@@ -10,27 +10,17 @@
 #include "writer.h"
 #include "caligo/x25519.h"
 #include <reader.h>
-#include "tls_messages.h"
 #include <cstdio>
+#include <set>
 #include "tls13.h"
 #include <talos/tls.h>
 #include "x509_certificate.h"
+#include "tls_messages.h"
 #include "truststore.h"
+#include "TlsEnums.h"
 #include <sys/mman.h>
 
-enum class Handshake {
-  client_hello = 1,
-  server_hello = 2,
-  new_session_ticket = 4,
-  end_of_early_data = 5,
-  encrypted_extensions = 8,
-  certificate = 11,
-  certificate_request = 13,
-  certificate_verify = 15,
-  finished = 20,
-  key_update = 24,
-  message_hash = 254,
-};
+namespace Talos {
 
 struct NullCipher {
   std::vector<uint8_t> handshakeSoFar;
@@ -57,18 +47,26 @@ struct TlsState {
   ec_value privkey = ec_value::random_private_key();
   std::variant<NullCipher, TLS13<GCM, AES<128>, SHA2<256>>, TLS13<GCM, AES<256>, SHA2<384>>> cipher;
   x509certificate cert;
+  x509certificate mycert;
+  RsaPrivateKey* privatekey;
   std::string hostname;
   uint64_t currentTime;
   std::vector<uint8_t> recvbuffer;
-  TlsStateHandle::AuthenticationState state = TlsStateHandle::AuthenticationState::New;
+  TlsStateHandle::AuthenticationState state = TlsStateHandle::AuthenticationState::ClientNew;
   TlsError error;
 
-  TlsState(std::string hostname, uint64_t currentTime) 
-  : hostname(hostname)
-  , currentTime(currentTime)
+  TlsState(uint64_t currentTime)
+  : currentTime(currentTime)
+  , state(TlsStateHandle::AuthenticationState::ServerNew)
   {
   }
 
+  TlsState(std::string hostname, uint64_t currentTime)
+  : hostname(hostname)
+  , currentTime(currentTime)
+  , state(TlsStateHandle::AuthenticationState::ClientNew)
+  {
+  }
 
   TlsStateHandle::AuthenticationState getAuthenticationState() {
     return state;
@@ -78,17 +76,203 @@ struct TlsState {
     return error;
   }
 
-  enum class ServerHelloState {
-    Invalid,
-    HelloRetry,
-    Valid
-  };
+  std::vector<uint8_t> handleClientHello(std::span<const uint8_t> message, ec_value& privkey) {
+    std::visit([message = std::span<const uint8_t>(message)](auto& c){ c.addHandshakeData(message); }, cipher);
+    reader r(message);
+    uint8_t handshakeType = r.read8();
+    uint32_t size = r.read24be();
+    if ((Tls::Handshake)handshakeType != Tls::Handshake::client_hello || size != message.size() - 4) {
+      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      return {};
+    }
+
+    // Stuff we get from client hello
+    std::set<uint16_t> cipherSuites;
+    std::set<uint16_t> supportedGroups = { 0x17 };
+    std::set<uint16_t> signatureAlgorithms = { };
+    std::map<uint8_t, std::span<const uint8_t>> keyshares;
+    uint16_t tlsver = r.read16be();
+    if (tlsver != 0x0303) {
+      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      return {};
+    }
+
+    r.get(32); // 'random' data, ignore
+
+    uint8_t sessSize = r.read8();
+    r.get(sessSize); // ignore session ID; just some more TLS1.2 make pretend
+  
+    uint16_t cipherSuiteSize = r.read16be();
+    for (size_t n = 0; n < cipherSuiteSize / 2; n++) {
+      cipherSuites.insert(r.read16be());
+    }
+
+    uint8_t compressions = r.read8();
+    uint8_t compressionType = r.read8();
+    if (compressions != 1 || compressionType != 0) {
+      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      return {};
+    }
+    uint16_t extLength = r.read16be();
+    reader exts = r.get(extLength);
+    if (r.fail()) {
+      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      return {};
+    }
+    while (exts.sizeleft()) {
+      uint16_t key = exts.read16be();
+      uint16_t size = exts.read16be();
+      reader vals = exts.get(size);
+      if (exts.fail()) {
+        state = TlsStateHandle::AuthenticationState::Disconnected; 
+        return {};
+      }
+      switch((Tls::Extension)key) {
+      case Tls::Extension::key_share: // key share
+      {
+        while (vals.sizeleft()) {
+          uint16_t keytype = vals.read16be();
+          uint16_t keysize = vals.read16be();
+          keyshares[keytype] = vals.get(keysize);
+        }
+      }
+        break;
+      case Tls::Extension::signature_algorithms:
+      {
+        signatureAlgorithms.clear();
+        uint16_t count = vals.read16be();
+        for (int n = 0; n < count; n += 2) {
+          signatureAlgorithms.insert(vals.read16be());
+        }
+      }
+        break;
+      case Tls::Extension::psk_key_exchange_modes:
+        break;
+      case Tls::Extension::server_name:
+      {
+        vals.read16be();
+        vals.read8();
+        size_t stringLength = vals.read16be();
+        auto sp = vals.get(stringLength);
+        hostname = std::string((const char*)sp.data(), stringLength);
+      }
+        break;
+      case Tls::Extension::supported_groups:
+      {
+        supportedGroups.clear();
+        uint16_t count = vals.read16be();
+        for (int n = 0; n < count; n += 2) {
+          supportedGroups.insert(vals.read16be());
+        }
+      }
+        break;
+      case Tls::Extension::supported_versions: // tls version
+        tlsver = vals.read16be();
+        break;
+      default: 
+        fprintf(stderr, "Found %02X\n", key);
+        break;
+      }
+    }
+    
+    if (tlsver != 0x0304) {
+      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      return {};
+    }
+    if (!supportedGroups.contains(0x1D)) {
+      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      return {};
+    }
+    // Need to check the actual algorithm our certificate(s) use
+    /*
+    if (!signatureAlgorithms.contains()) {
+      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      return;
+    }
+    */
+
+    auto& keyshare_x25519 = keyshares[0x1D];
+    if (keyshare_x25519.size() != 0x20) {
+      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      return {};
+    }
+    ec_value sharedkey = X25519(privkey, ec_value(keyshare_x25519));
+    privkey.wipe();
+    if (sharedkey == ec_value{0}) {
+      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      return {};
+    }
+    std::vector<uint8_t> sharedData = sharedkey.as_bytes();
+    sharedkey.wipe();
+    if (sharedData.empty()) {
+      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      return {};
+    }
+    uint16_t cipherSuite = 0;
+    if (cipherSuites.contains(0x1302)) {
+      cipherSuite = 0x1302;
+    } else if (cipherSuites.contains(0x1301)) {
+      cipherSuite = 0x1301;
+    } else {
+      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      return {};
+    }
+    state = TlsStateHandle::AuthenticationState::WaitingForClientFinished;
+
+    // Now prepare the care package for the client
+    // 1. ServerHello
+    std::vector<uint8_t> rv = serverHello(cipherSuite, 0x1D, X25519(privkey, bignum<256>(9)).as_bytes());
+    std::visit([message = std::span<const uint8_t>(message)](auto& c){ c.addHandshakeData(message); }, cipher);
+
+    // Include the serverhello into the handshake hash so far
+    if (cipherSuite == 0x1302) {
+      cipher = TLS13<GCM, AES<256>, SHA2<384>>(sharedData, std::move(std::get<NullCipher>(cipher).handshakeSoFar));
+    } else if (cipherSuite == 0x1301) {
+      cipher = TLS13<GCM, AES<128>, SHA2<256>>(sharedData, std::move(std::get<NullCipher>(cipher).handshakeSoFar));
+    }
+    // In one encrypted block:
+    // 2. EncryptedExtensions
+    std::vector<uint8_t> encexts = EncryptedExtensions();
+    // 3. Certificate
+    std::vector<uint8_t> cert = Certificate({&mycert});
+    std::vector<uint8_t> hashWithCert = std::visit([&](auto& c){ 
+      c.addHandshakeData(encexts); 
+      c.addHandshakeData(cert); 
+      return c.getHandshakeHash();
+    }, cipher);
+
+    // 4. CertificateVerify
+    std::vector<uint8_t> certverify = CertificateVerify(*privatekey, hashWithCert);
+
+    std::vector<uint8_t> hashForFinished = std::visit([&](auto& c){ 
+      c.addHandshakeData(certverify); 
+      return c.getHandshakeHash();
+    }, cipher);
+
+    // 5. Finished
+    std::vector<uint8_t> finished = Finished(hashForFinished);
+
+    encexts.insert(encexts.end(), cert.begin(), cert.end());
+    encexts.insert(encexts.end(), certverify.begin(), certverify.end());
+    encexts.insert(encexts.end(), finished.begin(), finished.end());
+
+    std::vector<uint8_t> encrypted = encrypt_message(encexts, 0x16);
+    rv.insert(rv.end(), encrypted.begin(), encrypted.end());
+    std::visit([&](auto& c){ 
+      c.addHandshakeData(finished); 
+    }, cipher);
+    // Switch to application keys
+    std::visit([&](auto& c) { c.switchToApplicationSecret(); }, cipher);
+
+    state = TlsStateHandle::AuthenticationState::WaitingForClientFinished; 
+    return rv;
+  }
 
   void handleServerHello(std::span<const uint8_t> message, ec_value& privkey) {
     reader r(message);
     uint8_t handshakeType = r.read8();
     uint32_t size = r.read24be();
-    if ((Handshake)handshakeType != Handshake::server_hello || size != message.size() - 4) {
+    if ((Tls::Handshake)handshakeType != Tls::Handshake::server_hello || size != message.size() - 4) {
       state = TlsStateHandle::AuthenticationState::Disconnected; 
       return;
     }
@@ -174,7 +358,6 @@ struct TlsState {
       default: 
         fprintf(stderr, "Found %02X\n", key);
         break;
-//          return ServerHelloState::Invalid;
       }
     }
     if (tlsver == 0x0304) 
@@ -185,7 +368,7 @@ struct TlsState {
 
   void handleEncryptedExtensions(std::span<const uint8_t> message) {
     (void)message;
-    state = TlsStateHandle::AuthenticationState::WaitingForCertificate;
+    state = TlsStateHandle::AuthenticationState::WaitingForServerCertificate;
     // check for illegal ones or weird ones
   }
 
@@ -205,14 +388,14 @@ struct TlsState {
     bool isTrustable = Truststore::Instance().trust(certs, currentTime);
     if (isTrustable and certs[0].appliesTo(hostname)) {
       cert = std::move(certs[0]);
-      state = TlsStateHandle::AuthenticationState::WaitingForCertificateVerify;
+      state = TlsStateHandle::AuthenticationState::WaitingForServerCertificateVerify;
     } else {
       state = TlsStateHandle::AuthenticationState::Disconnected;
     }
   }
 
   void handleCertificateVerify(std::span<const uint8_t> message) {
-    if (state != TlsStateHandle::AuthenticationState::WaitingForCertificateVerify) {
+    if (state != TlsStateHandle::AuthenticationState::WaitingForServerCertificateVerify) {
       state = TlsStateHandle::AuthenticationState::Disconnected;
       return;
     }
@@ -242,14 +425,14 @@ struct TlsState {
     }
 
     if (isValid) {
-      state = TlsStateHandle::AuthenticationState::WaitingForFinished;
+      state = TlsStateHandle::AuthenticationState::WaitingForServerFinished;
     } else {
       state = TlsStateHandle::AuthenticationState::Disconnected;
     }
   }
 
   std::vector<uint8_t> handleFinished(std::span<const uint8_t> message, std::span<const uint8_t> serverDigest) {
-    if (state != TlsStateHandle::AuthenticationState::WaitingForFinished) {
+    if (state != TlsStateHandle::AuthenticationState::WaitingForServerFinished) {
       state = TlsStateHandle::AuthenticationState::Disconnected;
       return {};
     }
@@ -266,7 +449,7 @@ struct TlsState {
     }, cipher);
 
     std::vector<uint8_t> clientFinished;
-    clientFinished.push_back((uint8_t)Handshake::finished);
+    clientFinished.push_back((uint8_t)Tls::Handshake::finished);
     clientFinished.push_back(0);
     clientFinished.push_back(0);
     clientFinished.push_back(hmac.size());
@@ -274,18 +457,24 @@ struct TlsState {
 
     std::vector<uint8_t> rv = encrypt_message(clientFinished, 0x16);
     std::visit([&](auto& c) { c.switchToApplicationSecret(); }, cipher);
-    state = TlsStateHandle::AuthenticationState::Operational;
+    state = TlsStateHandle::AuthenticationState::ClientOperational;
     return rv;
   }
 
   std::vector<uint8_t> handleStartupMessage(uint16_t messageType, std::span<const uint8_t> message) {
     switch(state) {
-      case TlsStateHandle::AuthenticationState::Operational:
+      case TlsStateHandle::AuthenticationState::ServerNew:
+
+      case TlsStateHandle::AuthenticationState::WaitingForClientFinished:
+
+      case TlsStateHandle::AuthenticationState::ServerOperational:
+
+      case TlsStateHandle::AuthenticationState::ClientOperational:
       case TlsStateHandle::AuthenticationState::Disconnected:
         std::terminate();
 
 
-      case TlsStateHandle::AuthenticationState::New:
+      case TlsStateHandle::AuthenticationState::ClientNew:
       {
         std::vector<uint8_t> hello = clientHello(hostname, X25519(privkey, bignum<256>(9)));
         std::visit([&](auto& c){ std::span hs = hello; c.addHandshakeData(hs.subspan(5)); }, cipher);
@@ -311,7 +500,7 @@ struct TlsState {
         std::visit([message = std::span<const uint8_t>(message)](auto& c){ c.addHandshakeData(message); }, cipher);
         reader r(message);
         uint8_t handshakeType = r.read8();
-        if ((Handshake)handshakeType != Handshake::encrypted_extensions) {
+        if ((Tls::Handshake)handshakeType != Tls::Handshake::encrypted_extensions) {
           state = TlsStateHandle::AuthenticationState::Disconnected;
           return {};
         }
@@ -326,7 +515,7 @@ struct TlsState {
       }
       break;
 
-      case TlsStateHandle::AuthenticationState::WaitingForCertificate:
+      case TlsStateHandle::AuthenticationState::WaitingForServerCertificate:
       {
         if (messageType != 0x1716) {
           state = TlsStateHandle::AuthenticationState::Disconnected;
@@ -335,12 +524,12 @@ struct TlsState {
         std::visit([message = std::span<const uint8_t>(message)](auto& c){ c.addHandshakeData(message); }, cipher);
         reader r(message);
         uint8_t handshakeType = r.read8();
-        switch((Handshake)handshakeType) {
-          case Handshake::certificate_request:
+        switch((Tls::Handshake)handshakeType) {
+          case Tls::Handshake::certificate_request:
             // TODO: implement certificate request handling for client
             state = TlsStateHandle::AuthenticationState::Disconnected;
             return {};
-          case Handshake::certificate:
+          case Tls::Handshake::certificate:
           {
             uint32_t size = r.read24be();
             std::span<const uint8_t> m = r.get(size);
@@ -358,7 +547,7 @@ struct TlsState {
       }
         break;
 
-      case TlsStateHandle::AuthenticationState::WaitingForCertificateVerify:
+      case TlsStateHandle::AuthenticationState::WaitingForServerCertificateVerify:
       {
         if (messageType != 0x1716) {
           state = TlsStateHandle::AuthenticationState::Disconnected;
@@ -366,7 +555,7 @@ struct TlsState {
         }
         reader r(message);
         uint8_t handshakeType = r.read8();
-        if ((Handshake)handshakeType != Handshake::certificate_verify) {
+        if ((Tls::Handshake)handshakeType != Tls::Handshake::certificate_verify) {
           state = TlsStateHandle::AuthenticationState::Disconnected;
           return {};
         }
@@ -381,7 +570,7 @@ struct TlsState {
       }
         return {};
 
-      case TlsStateHandle::AuthenticationState::WaitingForFinished:
+      case TlsStateHandle::AuthenticationState::WaitingForServerFinished:
       {
         if (messageType != 0x1716) {
           state = TlsStateHandle::AuthenticationState::Disconnected;
@@ -389,7 +578,7 @@ struct TlsState {
         }
         reader r(message);
         uint8_t handshakeType = r.read8();
-        if ((Handshake)handshakeType != Handshake::finished) {
+        if ((Tls::Handshake)handshakeType != Tls::Handshake::finished) {
           state = TlsStateHandle::AuthenticationState::Disconnected;
           return {};
         }
@@ -405,12 +594,12 @@ struct TlsState {
   }
 
   std::vector<uint8_t> startupExchange(std::span<const uint8_t> data) {
-    if (state == TlsStateHandle::AuthenticationState::Operational ||
+    if (state == TlsStateHandle::AuthenticationState::ClientOperational ||
         state == TlsStateHandle::AuthenticationState::Disconnected) {
       return {};
     }
     // All state changes are triggered by messages, except for the initial message.
-    if (state == TlsStateHandle::AuthenticationState::New) {
+    if (state == TlsStateHandle::AuthenticationState::ClientNew) {
       return handleStartupMessage(0, {});
     }
     std::vector<uint8_t> rv;
@@ -498,7 +687,7 @@ struct TlsState {
 
   // postcondition: a next receive_decode without argument will return nothing
   std::vector<uint8_t> receive_decode(std::span<const uint8_t> data) {
-    if (state != TlsStateHandle::AuthenticationState::Operational) {
+    if (state != TlsStateHandle::AuthenticationState::ClientOperational) {
       return {};
     }
 
@@ -560,11 +749,11 @@ struct TlsState {
           uint8_t handshakeType = r.read8();
 
           // Handshake message
-          switch(handshakeType) {
-          case 0x04: // New Session Ticket Message
+          switch((Tls::Handshake)handshakeType) {
+          case Tls::Handshake::new_session_ticket:
             break;
-          case 0x0d: // Post-Handshake Authentication
-          case 0x18: // Key Update
+          case Tls::Handshake::certificate_request:
+          case Tls::Handshake::key_update:
           default:
             // invalid message
             state = TlsStateHandle::AuthenticationState::Disconnected;
@@ -601,11 +790,14 @@ struct TlsState {
   }
 
   std::vector<uint8_t> send_encode(std::span<const uint8_t> data) {
-    if (state != TlsStateHandle::AuthenticationState::Operational) return {};
+    if (state != TlsStateHandle::AuthenticationState::ClientOperational) return {};
 
     return encrypt_message(data, 0x17);
   }
 };
 
 static_assert(sizeof(TlsState) < 4096);
+
+}
+
 

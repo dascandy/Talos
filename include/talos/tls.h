@@ -5,6 +5,8 @@
 #include "reader.h"
 #include "writer.h"
 
+namespace Talos {
+
 struct TlsState;
 
 enum class TlsError : uint16_t {
@@ -42,13 +44,16 @@ std::string to_string(TlsError error);
 struct TlsStateHandle {
   TlsState* state;
   enum class AuthenticationState : uint8_t {
-    New,
+    ClientNew,
     WaitingForServerHello,
     WaitingForEncryptedExtensions,
-    WaitingForCertificate,
-    WaitingForCertificateVerify,
-    WaitingForFinished,
-    Operational,
+    WaitingForServerCertificate,
+    WaitingForServerCertificateVerify,
+    WaitingForServerFinished,
+    ClientOperational,
+    ServerNew,
+    WaitingForClientFinished,
+    ServerOperational,
     Disconnected,
   };
 
@@ -69,4 +74,7 @@ struct TlsStateHandle {
   std::vector<uint8_t> receive_decode(std::span<const uint8_t> data);
   std::vector<uint8_t> send_encode(std::span<const uint8_t> data);
 };
+
+}
+
 

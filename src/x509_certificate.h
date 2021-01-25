@@ -108,6 +108,20 @@ struct RsaPubkey : PublicKey {
   bool validateRsaSsaPss(std::span<const uint8_t> message, std::span<const uint8_t> sig) const override;
 };
 
+struct PrivateKey {
+  virtual std::vector<uint8_t> signPkcs15(std::span<const uint8_t> message) const = 0;
+  virtual std::vector<uint8_t> signRsaSsaPss(std::span<const uint8_t> message) const = 0;
+};
+
+struct RsaPrivateKey : PrivateKey {
+  rsa_private_key<4096> privkey;
+  RsaPrivateKey(rsa_private_key<4096> privkey)
+  : privkey(privkey)
+  {}
+  std::vector<uint8_t> signPkcs15(std::span<const uint8_t> message) const override;
+  std::vector<uint8_t> signRsaSsaPss(std::span<const uint8_t> message) const override;
+};
+
 template <size_t Bits, typename Hash, typename MGF>
 bool validateRsaSsaPss(const rsa_public_key<Bits>& pubkey, std::span<const uint8_t> message, std::span<const uint8_t> sig) {
   if (sig.size() > (Bits / 8)) return false;
