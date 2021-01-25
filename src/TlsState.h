@@ -1,7 +1,7 @@
 #pragma once
 
 #include <talos/tls.h>
-#include "x509_certificate.h"
+#include "X509Certificate.h"
 #include "TlsMessages.h"
 #include "Truststore.h"
 #include "TlsEnums.h"
