@@ -2,6 +2,8 @@
 #include <fstream>
 #include <optional>
 
+namespace Talos {
+
 Truststore& Truststore::Instance() {
   static Truststore store;
   return store;
@@ -84,6 +86,8 @@ bool Truststore::trust(std::vector<x509certificate> &untrustedCertificates, uint
     n = 0;
   }
   return false;
+}
+
 }
 
 

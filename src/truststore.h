@@ -4,6 +4,8 @@
 #include <map>
 #include <optional>
 
+namespace Talos {
+
 class Truststore {
 public:
   static Truststore& Instance();
@@ -14,5 +16,7 @@ private:
   Truststore();
   std::map<std::string, x509certificate> trusted_certs;
 };
+
+}
 
 

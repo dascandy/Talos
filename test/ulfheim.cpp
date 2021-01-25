@@ -41,7 +41,7 @@ std::string ulfheimroot =
 
 TEST_CASE("Full ULFHEIM.NET TLS1.3 connection", "[TLS]") {
   std::span<uint8_t> cert((uint8_t*)ulfheimroot.data(), ulfheimroot.size());
-  Truststore::Instance().addCertificate(parseCertificate(cert, CertificateFormat::Pem));
+  Talos::Truststore::Instance().addCertificate(parseCertificate(cert, Talos::CertificateFormat::Pem));
 
   Talos::TlsState state("example.ulfheim.net", 1550000000);
   state.privkey = bignum<256>(privkey);

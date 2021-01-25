@@ -5,6 +5,8 @@
 #include "caligo/hkdf.h"
 #include <cstdio>
 
+namespace Talos {
+
 inline void log_key(const char* name, std::span<const uint8_t> key) {
   static FILE* sslkeylog = fopen("/home/pebi/sslkeylog.txt", "wb");
   fprintf(sslkeylog, "%s 0000000000000000000000000000000000000000000000000000000000000000 ", name);
@@ -62,5 +64,7 @@ struct TLS13 {
     return c.Encrypt(plaintext, aad);
   }
 };
+
+}
 
 

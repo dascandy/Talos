@@ -7,6 +7,8 @@
 #include <caligo/rsa.h>
 #include <caligo/rsapss.h>
 
+namespace Talos {
+
 using x509date = uint64_t;
 using x509id = std::vector<uint8_t>;
 
@@ -164,5 +166,7 @@ enum class CertificateFormat {
 
 std::vector<x509certificate> parseCertificatesPem(std::span<const uint8_t> in);
 x509certificate parseCertificate(std::span<const uint8_t> in, CertificateFormat format = CertificateFormat::Der);
+
+}
 
 

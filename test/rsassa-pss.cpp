@@ -18,7 +18,7 @@ void test_pss(std::span<const uint8_t> n,
   std::reverse(nn.begin(), nn.end());
   std::reverse(ee.begin(), ee.end());
   rsa_public_key<Bits> pubkey = rsa_public_key<Bits>(bignum<Bits>(nn), bignum<Bits>(ee));
-  bool isOk = validateRsaSsaPss<Bits, Hash, Caligo::MGF1<SHA1>>(pubkey, msg, s);
+  bool isOk = Talos::validateRsaSsaPss<Bits, Hash, Caligo::MGF1<SHA1>>(pubkey, msg, s);
   CHECK(isOk);
 }
 

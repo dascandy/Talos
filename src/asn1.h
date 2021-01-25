@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <cstddef>
 
+namespace Talos {
+
 enum class asn1_id {
   boolean = 1,
   integer = 2,
@@ -52,5 +54,7 @@ struct asn1_view {
     return offset == data.size();
   }
 };
+
+}
 
 

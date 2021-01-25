@@ -7,6 +7,8 @@
 #include "truststore.h"
 #include <caligo/pkcs1.h>
 
+namespace Talos {
+
 object_id object_id::X509NameParts::CommonName = std::span<const uint8_t>{{ 0x55, 0x04, 0x03 }};
 object_id object_id::X509NameParts::Surname = std::span<const uint8_t>{{ 0x55, 0x04, 0x04 }};
 object_id object_id::X509NameParts::SerialNumber = std::span<const uint8_t>{{ 0x55, 0x04, 0x05 }};
@@ -61,7 +63,7 @@ bool RsaPubkey::validateSignature(std::vector<uint8_t> data, std::span<const uin
 }
 
 bool RsaPubkey::validateRsaSsaPss(std::span<const uint8_t> message, std::span<const uint8_t> signature) const {
-  return validateRsaSsaPss<4096, SHA2<256>, Caligo::MGF1<SHA2<256>>>(pubkey, message, signature);
+  return ::Talos::validateRsaSsaPss<4096, SHA2<256>, Caligo::MGF1<SHA2<256>>>(pubkey, message, signature);
 }
 
 template <typename T>
@@ -349,6 +351,8 @@ bool x509certificate::verify(x509certificate& issuer) {
   }
 
   return issuer.pubkey->validateSignature(getHashedData(object_id{oid}, cert, signature.size()), signature);
+}
+
 }
 
 
