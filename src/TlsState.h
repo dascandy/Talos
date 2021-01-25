@@ -1,24 +1,28 @@
 #pragma once
 
-#include <variant>
-#include "caligo/random.h"
-#include "caligo/sha2.h"
-#include "caligo/hkdf.h"
-#include "caligo/aes.h"
-#include "caligo/ghash.h"
-#include "caligo/gcm.h"
-#include "writer.h"
-#include "caligo/x25519.h"
-#include <reader.h>
-#include <cstdio>
-#include <set>
-#include "tls13.h"
 #include <talos/tls.h>
+#include "tls13.h"
 #include "x509_certificate.h"
 #include "tls_messages.h"
-#include "truststore.h"
+#include "Truststore.h"
 #include "TlsEnums.h"
+
+#include <variant>
+#include <cstdio>
+#include <set>
 #include <sys/mman.h>
+
+#include <caligo/random.h>
+#include <caligo/sha2.h>
+#include <caligo/hkdf.h>
+#include <caligo/aes.h>
+#include <caligo/ghash.h>
+#include <caligo/gcm.h>
+#include <caligo/x25519.h>
+
+#include <writer.h>
+#include <reader.h>
+
 
 namespace Talos {
 

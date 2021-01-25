@@ -1,8 +1,8 @@
 #pragma once
 
 #include "caligo/aes.h"
-
 #include "caligo/hkdf.h"
+
 #include <cstdio>
 
 namespace Talos {

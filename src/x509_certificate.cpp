@@ -1,11 +1,14 @@
 #include "x509_certificate.h"
+
 #include "asn1.h"
+#include "Truststore.h"
+
 #include <caligo/bignum.h>
 #include <caligo/base64.h>
 #include <caligo/sha2.h>
-#include <optional>
-#include "truststore.h"
 #include <caligo/pkcs1.h>
+
+#include <optional>
 
 namespace Talos {
 

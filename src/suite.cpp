@@ -1,21 +1,26 @@
-#include <variant>
-#include "caligo/random.h"
-#include "caligo/sha2.h"
-#include "caligo/hkdf.h"
-#include "caligo/aes.h"
-#include "caligo/ghash.h"
-#include "caligo/gcm.h"
-#include "writer.h"
-#include "caligo/x25519.h"
-#include <reader.h>
-#include "tls_messages.h"
-#include <cstdio>
-#include "tls13.h"
 #include <talos/tls.h>
+
+#include "tls_messages.h"
+#include "tls13.h"
 #include "x509_certificate.h"
-#include "truststore.h"
-#include <sys/mman.h>
+#include "Truststore.h"
 #include "TlsState.h"
+
+#include <variant>
+#include <sys/mman.h>
+#include <cstdio>
+
+#include <writer.h>
+#include <reader.h>
+
+#include <caligo/random.h>
+#include <caligo/sha2.h>
+#include <caligo/hkdf.h>
+#include <caligo/aes.h>
+#include <caligo/ghash.h>
+#include <caligo/gcm.h>
+#include <caligo/x25519.h>
+
 
 namespace Talos {
 
