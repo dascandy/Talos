@@ -40,34 +40,28 @@ object_id object_id::SignatureType::EcdsaSHA512 = std::span<const uint8_t>{{0x2a
 object_id object_id::SignatureType::RsaSHA256 = std::span<const uint8_t>{{0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0b}};
 object_id object_id::SignatureType::RsaSHA384 = std::span<const uint8_t>{{0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0c}};
 object_id object_id::SignatureType::RsaSHA512 = std::span<const uint8_t>{{0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0d}};
+object_id object_id::SignatureType::RsaSsaPss = std::span<const uint8_t>{{0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0a}};
 
-std::vector<uint8_t> getHashedData(object_id oid, std::span<const uint8_t> data, size_t requestedSize) {
-  if (oid == object_id::SignatureType::EcdsaSHA256 ||
-      oid == object_id::SignatureType::RsaSHA256) {
-    return Caligo::PKCS1<SHA2<256>>(data, requestedSize);
-  } else if (oid == object_id::SignatureType::EcdsaSHA384 ||
-             oid == object_id::SignatureType::RsaSHA384) {
-    return Caligo::PKCS1<SHA2<384>>(data, requestedSize);
-  } else if (oid == object_id::SignatureType::EcdsaSHA512 ||
-             oid == object_id::SignatureType::RsaSHA512) {
-    return Caligo::PKCS1<SHA2<512>>(data, requestedSize);
-  }
-  printf("%s:%d\n", __FILE__, __LINE__);
-  abort();
-}
 #define FAIL() do { printf("%s:%d\n", __FILE__, __LINE__); return {}; } while (0)
 
-bool RsaPubkey::validateSignature(std::vector<uint8_t> data, std::span<const uint8_t> signature) const {
-  std::reverse(data.begin(), data.end());
-  bignum<4096> toSign(data);
-  bignum<4096> sig(signature);
-  bignum<4096> sum = rsaep(pubkey, sig);
-  return sum == toSign;
+bool RsaPubkey::validateSignature(Tls13SignatureScheme type, std::span<const uint8_t> data, std::span<const uint8_t> signature) const {
+  if (type == Tls13SignatureScheme::rsa_pkcs1_sha256) {
+    return pubkey.validatePkcs1_5Signature<SHA2<256>>(data, signature);
+  } else if (type == Tls13SignatureScheme::rsa_pkcs1_sha384) {
+    return pubkey.validatePkcs1_5Signature<SHA2<384>>(data, signature);
+  } else if (type == Tls13SignatureScheme::rsa_pkcs1_sha512) {
+    return pubkey.validatePkcs1_5Signature<SHA2<512>>(data, signature);
+  } else if (type == Tls13SignatureScheme::rsa_pss_rsae_sha256 || type == Tls13SignatureScheme::rsa_pss_pss_sha256) {
+    return pubkey.validatePssSignature<SHA2<256>, Caligo::MGF1<SHA2<256>>>(data, signature);
+  } else if (type == Tls13SignatureScheme::rsa_pss_rsae_sha384 || type == Tls13SignatureScheme::rsa_pss_pss_sha384) {
+    return pubkey.validatePssSignature<SHA2<384>, Caligo::MGF1<SHA2<384>>>(data, signature);
+  } else if (type == Tls13SignatureScheme::rsa_pss_rsae_sha512 || type == Tls13SignatureScheme::rsa_pss_pss_sha512) {
+    return pubkey.validatePssSignature<SHA2<512>, Caligo::MGF1<SHA2<512>>>(data, signature);
+  } else {
+    return false;
+  }
 }
 
-bool RsaPubkey::validateRsaSsaPss(std::span<const uint8_t> message, std::span<const uint8_t> signature) const {
-  return ::Talos::validateRsaSsaPss<4096, SHA2<256>, Caligo::MGF1<SHA2<256>>>(pubkey, message, signature);
-}
 
 template <typename T>
 T parseDer(asn1_view& data);
@@ -217,9 +211,9 @@ std::unique_ptr<PublicKey> parseDer<std::unique_ptr<PublicKey>>(asn1_view& data)
   return std::make_unique<RsaPubkey>(parseDer<RsaPubkey>(body));
 }
 
-x509certificate parseCertificate(std::span<const uint8_t> in, CertificateFormat format) {
+x509certificate parseCertificate(std::span<const uint8_t> in, DataFormat format) {
   std::vector<uint8_t> buffer;
-  if (format == CertificateFormat::Pem) {  // decode pem
+  if (format == DataFormat::Pem) {  // decode pem
     std::string_view sv((const char*)in.data(), in.size());
     size_t start = sv.find("-----BEGIN CERTIFICATE-----") + strlen("-----BEGIN CERTIFICATE-----");
     size_t end = sv.find("-----END CERTIFICATE-----");
@@ -314,13 +308,13 @@ std::vector<x509certificate> parseCertificatesPem(std::span<const uint8_t> in) {
     std::string_view certpem = std::string_view(buffer).substr(start, end - start);
 
     std::span<const uint8_t> av(std::span<const uint8_t>((const uint8_t*)certpem.data(), certpem.size()));
-    certs.push_back(parseCertificate(av, CertificateFormat::Pem));
+    certs.push_back(parseCertificate(av, DataFormat::Pem));
     start = end;
     end = buffer.find("-----BEGIN CERTIFICATE-----", start + 1);
   }
 
   std::span<const uint8_t> av(std::span<const uint8_t>((const uint8_t*)buffer.data(), buffer.size()));
-  certs.push_back(parseCertificate(av, CertificateFormat::Pem));
+  certs.push_back(parseCertificate(av, DataFormat::Pem));
   return certs;
 }
 
@@ -352,8 +346,19 @@ bool x509certificate::verify(x509certificate& issuer) {
   for (size_t n = 0; n < sig.size() - 1; n++) {
     signature.push_back(sig[sig.size() - n - 1]);
   }
+  object_id objid{oid};
+  Tls13SignatureScheme type = Tls13SignatureScheme::rsa_pkcs1_sha256;
+  if (objid == object_id::SignatureType::RsaSHA256) {
+    type = Tls13SignatureScheme::rsa_pkcs1_sha256;
+  } else if (objid == object_id::SignatureType::RsaSHA384) {
+    type = Tls13SignatureScheme::rsa_pkcs1_sha384;
+  } else if (objid == object_id::SignatureType::RsaSHA512) {
+    type = Tls13SignatureScheme::rsa_pkcs1_sha512;
+  } else {
+    type = (Tls13SignatureScheme)0;
+  }
 
-  return issuer.pubkey->validateSignature(getHashedData(object_id{oid}, cert, signature.size()), signature);
+  return issuer.pubkey->validateSignature(type, cert, signature);
 }
 
 }

@@ -1,4 +1,4 @@
-#include "x509_certificate.h"
+#include "X509Certificate.h"
 #include <catch/catch.hpp>
 
 TEST_CASE("Can parse DER Lets Encrypt root cert") {
@@ -151,7 +151,7 @@ TEST_CASE("Can parse DER Lets Encrypt root cert") {
     0xfe, 0x8e, 0x1e, 0x57, 0xa2, 0xcd, 0x40, 0x9d, 0x7e, 0x62, 0x22, 0xda, 0xde, 0x18, 0x27 // signature
   };
 
-  Talos::x509certificate c = Talos::parseCertificate(cert, Talos::CertificateFormat::Der);
+  Talos::x509certificate c = Talos::parseCertificate(cert, Talos::DataFormat::Der);
 
   // It's self-signed
   CHECK(c.subject == c.issuer);
@@ -197,7 +197,7 @@ TEST_CASE("Can parse PEM Lets Encrypt root cert") {
     "-----END CERTIFICATE-----\n";
   std::span<const uint8_t> cert((const uint8_t*)letsencrypt.data(), letsencrypt.size());
 
-  Talos::x509certificate c = Talos::parseCertificate(cert, Talos::CertificateFormat::Pem);
+  Talos::x509certificate c = Talos::parseCertificate(cert, Talos::DataFormat::Pem);
 
   // It's self-signed
   CHECK(c.subject == c.issuer);

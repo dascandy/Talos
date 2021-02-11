@@ -31,30 +31,16 @@ void Truststore::addCertificate(x509certificate cert) {
   trusted_certs[cert.subject] = std::move(cert);
 }
 
-// RFC 5280, chapter 6: Certificate validation
-// Updated to support nonlinearity
-// Goal: Determine whether or not untrustedCertificates[0] is trustable.
-// For each of the currently untrusted certificates except the first, see if we have a corresponding trust anchor.
-// If not, move to back of list & retry.
-// For this certificate, check that:
-//   Signature matches the issuer
-//   Validity start is after the issuer started
-//   Validity end is before the issuer ended
-//   Current time is between validity start & validity end
-// If they all match, add it to the localCertMap.
-// If they are not all OK, discard certificate fully. No retries.
-//
-// When the certificates that are valid have been parsed (and those without a valid trust anchor discarded)
-// For the final certificate, check that:
-//   Signature matches the issuer
-//   Validity start is after the issuer started
-//   Validity end is before the issuer ended
-//   Current time is between validity start & validity end
-//
-// construct the path to the applicable root
-// then validate the policies from the root to the client certificate.
-// if at any point these fail, return false
-// return true;
+// Check that the target certificate could be valid at the current time.
+//   If not, return false already.
+// while we cannot confirm the current certificate is valid:
+//   find the first certificate where we *do not* trust a certificate with its name (to prevent tricks), and where we *do* trust a certificate with its issuer as name.
+//     If no certificates match this, then return false.
+//   Check the start to be *after* the issuer's start date, and the end date to be *before* the issuer's end date. If not, discard cert & continue
+//   Check that the certificate is validly signed with its issuer's public key. If not, discard cert & continue
+//   If this is the target cert, then return true.
+//   Mark certificate as valid and continue to the next
+
 bool Truststore::trust(std::vector<x509certificate> &untrustedCertificates, uint64_t currentTime) {
   std::map<std::string, x509certificate*> localCertMap;
   for (auto& [name, cert] : trusted_certs) {

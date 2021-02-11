@@ -4,7 +4,6 @@
 
 #include <caligo/bignum.h>
 #include <caligo/rsa.h>
-#include <caligo/rsapss.h>
 
 #include <string>
 #include <unordered_set>
@@ -85,6 +84,7 @@ struct object_id {
     static object_id RsaSHA256;
     static object_id RsaSHA384;
     static object_id RsaSHA512;
+    static object_id RsaSsaPss;
   };
 
   object_id() 
@@ -97,10 +97,27 @@ struct object_id {
   bool operator==(const object_id& o) const = default;
 };
 
+enum Tls13SignatureScheme {
+  rsa_pkcs1_sha256 = 0x0401,
+  rsa_pkcs1_sha384 = 0x0501,
+  rsa_pkcs1_sha512 = 0x0601,
+  rsa_pss_rsae_sha256 = 0x0804,
+  rsa_pss_rsae_sha384 = 0x0805,
+  rsa_pss_rsae_sha512 = 0x0806,
+  rsa_pss_pss_sha256 = 0x0809,
+  rsa_pss_pss_sha384 = 0x080a,
+  rsa_pss_pss_sha512 = 0x080b,
+
+  ecdsa_secp256r1_sha256 = 0x0403,
+  ecdsa_secp384r1_sha384 = 0x0503,
+  ecdsa_secp521r1_sha512 = 0x0603,
+  ed25519 = 0x0807,
+  ed448 = 0x0808,
+};
+
 struct PublicKey {
   virtual ~PublicKey() = default;
-  virtual bool validateSignature(std::vector<uint8_t>, std::span<const uint8_t>) const = 0;
-  virtual bool validateRsaSsaPss(std::span<const uint8_t> message, std::span<const uint8_t> sig) const = 0;
+  virtual bool validateSignature(Tls13SignatureScheme type, std::span<const uint8_t>, std::span<const uint8_t>) const = 0;
 };
 
 struct RsaPubkey : PublicKey {
@@ -108,8 +125,7 @@ struct RsaPubkey : PublicKey {
   RsaPubkey(rsa_public_key<4096> pubkey)
   : pubkey(pubkey)
   {}
-  bool validateSignature(std::vector<uint8_t>, std::span<const uint8_t>) const override;
-  bool validateRsaSsaPss(std::span<const uint8_t> message, std::span<const uint8_t> sig) const override;
+  bool validateSignature(Tls13SignatureScheme type, std::span<const uint8_t> data, std::span<const uint8_t> signature) const override;
 };
 
 struct PrivateKey {
@@ -125,18 +141,6 @@ struct RsaPrivateKey : PrivateKey {
   std::vector<uint8_t> signPkcs15(std::span<const uint8_t> message) const override;
   std::vector<uint8_t> signRsaSsaPss(std::span<const uint8_t> message) const override;
 };
-
-template <size_t Bits, typename Hash, typename MGF>
-bool validateRsaSsaPss(const rsa_public_key<Bits>& pubkey, std::span<const uint8_t> message, std::span<const uint8_t> sig) {
-  if (sig.size() > (Bits / 8)) return false;
-  std::vector<uint8_t> nsig(sig.data(), sig.data() + sig.size());
-  std::reverse(nsig.begin(), nsig.end());
-  auto sig_bytes = rsaep(pubkey, bignum<Bits>(nsig)).as_bytes();
-  sig_bytes.resize(sig.size());
-  std::reverse(sig_bytes.begin(), sig_bytes.end());
-
-  return Caligo::EMSA_PSS_VERIFY<Hash, MGF::hashsize, MGF>(message, sig_bytes);
-}
 
 struct x509certificate {
   std::vector<uint8_t> derCert;
@@ -161,13 +165,14 @@ struct x509certificate {
   bool verify(x509certificate& issuer);
 };
 
-enum class CertificateFormat {
+enum class DataFormat {
   Der,
   Pem,
 };
 
 std::vector<x509certificate> parseCertificatesPem(std::span<const uint8_t> in);
-x509certificate parseCertificate(std::span<const uint8_t> in, CertificateFormat format = CertificateFormat::Der);
+x509certificate parseCertificate(std::span<const uint8_t> in, DataFormat format = DataFormat::Der);
+std::unique_ptr<PrivateKey> parsePrivateKey(std::span<const uint8_t> in, DataFormat format = DataFormat::Der);
 
 }
 

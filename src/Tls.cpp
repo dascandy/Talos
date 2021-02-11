@@ -439,7 +439,7 @@ struct TlsState {
     while (r.sizeleft()) {
       uint32_t certlength = r.read24be();
       std::span<const uint8_t> certdata = r.get(certlength);
-      certs.push_back(parseCertificate(certdata, CertificateFormat::Der));
+      certs.push_back(parseCertificate(certdata, DataFormat::Der));
       uint16_t extLength = r.read16be();
       r.get(extLength);
     }
@@ -459,9 +459,6 @@ struct TlsState {
       return;
     }
 
-    // Check if it's signed correctly
-    bool isValid = false;
-
     auto hash = std::visit([&](auto& c) -> std::vector<uint8_t>{ return c.getHandshakeHash(); }, cipher);
     std::vector<uint8_t> tosign;
     std::string tls13_prefix = "                                                                TLS 1.3, server CertificateVerify";
@@ -469,21 +466,10 @@ struct TlsState {
     tosign.insert(tosign.end(), tls13_prefix.begin(), tls13_prefix.end());
     tosign.insert(tosign.end(), hash.begin(), hash.end());
 
-    uint16_t sigAlgo = (message[0] << 8) + message[1];
+    Tls13SignatureScheme sigAlgo = (Tls13SignatureScheme)((message[0] << 8) + message[1]);
     std::span<const uint8_t> sig = message.subspan(4); // also skip over the size argument
-    switch(sigAlgo) {
-      case 0x0401:
-        isValid = cert.pubkey->validateSignature(tosign, sig);
-        break;
-      case 0x0804:
-      case 0x0809:
-        isValid = cert.pubkey->validateRsaSsaPss(tosign, sig);
-        break;
-      default:
-        break;
-    }
 
-    if (isValid) {
+    if (cert.pubkey->validateSignature(sigAlgo, tosign, sig)) {
       state = TlsStateHandle::AuthenticationState::WaitingForServerFinished;
     } else {
       state = TlsStateHandle::AuthenticationState::Disconnected;
@@ -508,7 +494,7 @@ struct TlsState {
     }, cipher);
 
     std::vector<uint8_t> clientFinished;
-    clientFinished.push_back((uint8_t)Tls::Handshake::finished);
+  clientFinished.push_back((uint8_t)Tls::Handshake::finished);
     clientFinished.push_back(0);
     clientFinished.push_back(0);
     clientFinished.push_back(hmac.size());
