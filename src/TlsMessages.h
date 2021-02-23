@@ -9,6 +9,7 @@
 
 #include <string>
 #include <vector>
+#include <set>
 #include <cstdint>
 #include <utility>
 
@@ -17,7 +18,7 @@ namespace Talos {
 std::vector<uint8_t> serverHello(uint16_t cipherSuite, uint16_t group, std::span<const uint8_t> keyshare) {
   writer header;
   header.add16be(0x0303);
-  for (uint8_t n = 0; n < 32; n++) {
+  for (uint8_t n = 0x70; n < 0x90; n++) {
     header.add8(n);
   }
   header.add8(32);
@@ -29,28 +30,26 @@ std::vector<uint8_t> serverHello(uint16_t cipherSuite, uint16_t group, std::span
 
   writer extensions;
 
-  // Supported versions
-  extensions.add16be(0x2B);
-  extensions.add16be(0x03);
-  extensions.add8(0x02);
-  extensions.add16be(0x0304);
-
   // Key share our key back
   extensions.add16be(0x33);
-  extensions.add16be(0x26);
   extensions.add16be(0x24);
   extensions.add16be(group);
   extensions.add16be(0x20);
   extensions.add(keyshare);
+
+  // Supported versions
+  extensions.add16be(0x2B);
+  extensions.add16be(0x02);
+  extensions.add16be(0x0304);
 
   header.add16be(extensions.size());
   header.add(extensions);
 
   writer message;
   message.add8(0x16);
-  message.add16be(0x0301);
+  message.add16be(0x0303);
   message.add16be(header.size() + 4);
-  message.add8(0x01);
+  message.add8(0x02);
   message.add24be(header.size());
   message.add(header);
   return std::move(message);
@@ -64,10 +63,10 @@ std::vector<uint8_t> EncryptedExtensions() {
   return std::move(ee);
 }
 
-std::vector<uint8_t> Certificate(std::vector<x509certificate*> mycert) {
+std::vector<uint8_t> Certificate(std::vector<x509certificate> &mycert) {
   writer certs;
-  for (auto cert : mycert) {
-    std::vector<uint8_t> certDer = cert->derCert;
+  for (auto &cert : mycert) {
+    std::vector<uint8_t> certDer = cert.derCert;
     certs.add24be(certDer.size());
     certs.add(certDer);
     certs.add16be(0); // no extensions
@@ -81,20 +80,44 @@ std::vector<uint8_t> Certificate(std::vector<x509certificate*> mycert) {
   return std::move(header);
 }
 
-std::vector<uint8_t> CertificateVerify(RsaPrivateKey& privkey, std::span<const uint8_t> hash) {
+std::vector<uint8_t> ServerCertificateVerify(std::set<uint16_t> allowedAlgorithms, PrivateKey& privkey, std::span<const uint8_t> hash) {
+  static const std::vector<Tls13SignatureScheme> preferredSignatureTypes = {
+    Tls13SignatureScheme::rsa_pss_rsae_sha256,
+    Tls13SignatureScheme::rsa_pss_rsae_sha384,
+    Tls13SignatureScheme::rsa_pss_rsae_sha512,
+    Tls13SignatureScheme::rsa_pss_pss_sha256,
+    Tls13SignatureScheme::rsa_pss_pss_sha384,
+    Tls13SignatureScheme::rsa_pss_pss_sha512,
+    Tls13SignatureScheme::rsa_pkcs1_sha256,
+    Tls13SignatureScheme::rsa_pkcs1_sha384,
+    Tls13SignatureScheme::rsa_pkcs1_sha512,
+  };
   std::string tls13_prefix = "                                                                TLS 1.3, server CertificateVerify";
   tls13_prefix.push_back(0); // Do not move to the string literal above; there is *no* char[] constructor in std::string.
   std::vector<uint8_t> tosign;
   tosign.insert(tosign.end(), tls13_prefix.begin(), tls13_prefix.end());
   tosign.insert(tosign.end(), hash.begin(), hash.end());
+  printf("tosign ");
+  for (auto& c : tosign) {
+    printf("%02x ", c);
+  }
+  printf("\n");
 
-  std::vector<uint8_t> sig = privkey.signRsaSsaPss(tosign);
+  for (auto& type : preferredSignatureTypes) {
+    if (not allowedAlgorithms.contains(type)) continue;
 
-  writer header;
-  header.add16be(0x0809);
-  header.add16be(sig.size());
-  header.add(sig);
-  return std::move(header);
+    std::vector<uint8_t> sig = privkey.sign(type, tosign);
+
+    writer header;
+    header.add8(0x0F);
+    header.add24be(sig.size() + 4);
+    header.add16be(type);
+    header.add16be(sig.size());
+    header.add(sig);
+    return std::move(header);
+  }
+
+  return {};
 }
 
 std::vector<uint8_t> Finished(std::span<const uint8_t> hmac) {

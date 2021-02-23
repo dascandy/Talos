@@ -129,8 +129,8 @@ struct RsaPubkey : PublicKey {
 };
 
 struct PrivateKey {
-  virtual std::vector<uint8_t> signPkcs15(std::span<const uint8_t> message) const = 0;
-  virtual std::vector<uint8_t> signRsaSsaPss(std::span<const uint8_t> message) const = 0;
+  virtual ~PrivateKey() = default;
+  virtual std::vector<uint8_t> sign(Tls13SignatureScheme type, std::span<const uint8_t> message) const = 0;
 };
 
 struct RsaPrivateKey : PrivateKey {
@@ -138,8 +138,7 @@ struct RsaPrivateKey : PrivateKey {
   RsaPrivateKey(rsa_private_key<4096> privkey)
   : privkey(privkey)
   {}
-  std::vector<uint8_t> signPkcs15(std::span<const uint8_t> message) const override;
-  std::vector<uint8_t> signRsaSsaPss(std::span<const uint8_t> message) const override;
+  std::vector<uint8_t> sign(Tls13SignatureScheme type, std::span<const uint8_t> message) const override;
 };
 
 struct x509certificate {

@@ -1,6 +1,6 @@
 #include "X509Certificate.h"
 #include <catch/catch.hpp>
-
+/*
 TEST_CASE("Can parse DER Lets Encrypt root cert") {
   std::vector<uint8_t> cert = { 
 0x30, 0x82, 0x05, 0x6b, 
@@ -209,5 +209,51 @@ TEST_CASE("Can parse PEM Lets Encrypt root cert") {
   CHECK(c.validity_end == 2064567878); // 2035-06-04 in unix time
 
   CHECK(c.verify(c));
+}
+*/
+TEST_CASE("RSA parsed from private key file works symmetrically") {
+  std::string privkey = "-----BEGIN RSA PRIVATE KEY-----\n"
+    "MIIEpQIBAAKCAQEAveHM4Qc2koZTVqe7x9s5tfFmwbK5FJNEaVaQrqzFOGBT+kRU\n"
+    "EjY2hI/L333vJ6OAwdxEEf4yXaNdKvlg+VAZgY41cPz2h++IEayKXXAOwkHuJXlO\n"
+    "/YfiTGafDmLIlu9cLGjsuvl4OTW9KmJPapnHc2f/QutIjrwY1s4c49nMMtDkA7tr\n"
+    "wl07K5osM61yoKMeE/zaOg/6L8XB1RSsfhAOQxe8yQGnXHBoGAVDCaoeuLUArE2J\n"
+    "Tff4IL64tXlyy1JUVpVpM4eHEs26xb9vkuQdcbk27csJfn7BAJg0RGtST7XVYoFU\n"
+    "hIdQaxiukC0DyrGjRaX31a7eNXjHVngSVL4kmQIDAQABAoIBAQCAijPUfbqOtEoE\n"
+    "VmYDJD/MEA/8vg0WhZ8BJC2rYZ/cyzDuMYUsEvETCfj8YVcdYUzPb1nRSGA2DVoL\n"
+    "tmfUPkoV7vv0cfo+CYP2WvQLzsje7hzV12oGrQ8fozS3W13o9z5RffILnMerCtr0\n"
+    "rzqNsm5XjKY7WeVzYpf6Cet6vzzBhIaPdwqv+q+faDLEtrPhJCFcnV/LlNmHj89B\n"
+    "5ik1CqZoZXZiVSalug3aGi6C8LuhI+3vhCZrzhD4dx80ljNgCfkF70W+qx8yUrqq\n"
+    "d2pAeMCA9a9byUXeSWYZivMuNJ8xaQsYvXp0P9hQlbuOY1+vQV9uyJ+y0ds9Yz/p\n"
+    "1WSqoEbRAoGBAOcqxhGkGR76gaCpxJacrq3Pp0Ht3moJ/6GXAcueDfiSUHmhlWX6\n"
+    "vGS+hnWdKF43UYMD3Ji9LPENNmkrrbFBYvLcV41eFu3c6bocT2TeTsgfNSP2FlZb\n"
+    "zjMtOgVjgWEjlvz2aeDZvA9MHDZiXurOiZ8ES/d/CXqkbpHz7eSdH21FAoGBANJH\n"
+    "qgf+t7QPZfVmwokM/zKAwcBWjamUqnbPd0gBtp+tAV1o/OTrORilnIElNpQsPpJq\n"
+    "wBAICKfowa/URWIG9V64Rs330HqSxpvRl8KxSdifKXMQTozD9PV3c8hy5e3t4uOP\n"
+    "aIv0u6jkUy3cwuuKRecjKq6VA6Ed+huM/X1ab31FAoGBALHAASdlb++THgPFJqXM\n"
+    "+sApkOmwFzqgT5EYBUhlU0bUcs7kAXW19BDfM5LSckzn6mR8nq5PoHQF/dWmwVsv\n"
+    "9P7bkPLh622hVZNG24GrMxbMcFcjjY9/7jEJ0Lh+B+kCrcH7U/SSV/nHQ1ZKE8Qn\n"
+    "ZkkAy80WQNqt/1t5Hm6Qpq6lAoGAcj6JPGrBN8yd4mQAESHEjJWzrmHX+WhR7Nbu\n"
+    "wWpc5AfElBF0RJMfpCpmCyxCqOIY5MemrY8P1Nn6USMMxyNssBeCMGkRFWclDIck\n"
+    "4pwbuNtQU7lqU8QrFCnf9+mkzk3OVUAW1uMSCcJzBpnINNwc+mT6zXscS67TsaA6\n"
+    "IJ6/r9kCgYEAl/HHiae28fpV4ZEI3AK5UgVwWFvBX0CUIG9hJSIKd+Zb2vkeS/Rs\n"
+    "OJzAOoHSl7qk4PADc68zXq1ADvMRiE+PMOrfSk5+vKv5DHbfZK6SIiq15oq5sZam\n"
+    "pBomVytd2q5Hi6t63n9ZY6fq8xDzKH6khOLi75tuN4UZcgSRp4Gag/I=\n"
+    "-----END RSA PRIVATE KEY-----\n";
+
+  std::unique_ptr<Talos::PrivateKey> pk = Talos::parsePrivateKey(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(privkey.data()), privkey.size()), Talos::DataFormat::Pem);
+  rsa_public_key<4096> pubk(((Talos::RsaPrivateKey*)(pk.get()))->privkey.n, 65537);
+  std::unique_ptr<Talos::PublicKey> pubkey = std::make_unique<Talos::RsaPubkey>(pubk);
+
+  std::vector<uint8_t> message;
+  message.resize(4096);
+  generate_random(message);
+  std::vector<uint8_t> sig = pk->sign(Talos::Tls13SignatureScheme::rsa_pss_pss_sha256, message);
+  printf("SIGNATURE ");
+  for (auto& c : sig) {
+    printf("%02x ", c);
+  }
+  printf("\n");
+  bool sigOk = pubkey->validateSignature(Talos::Tls13SignatureScheme::rsa_pss_pss_sha256, message, sig);
+  REQUIRE(sigOk);
 }
 

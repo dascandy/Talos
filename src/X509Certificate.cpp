@@ -45,23 +45,48 @@ object_id object_id::SignatureType::RsaSsaPss = std::span<const uint8_t>{{0x2a, 
 #define FAIL() do { printf("%s:%d\n", __FILE__, __LINE__); return {}; } while (0)
 
 bool RsaPubkey::validateSignature(Tls13SignatureScheme type, std::span<const uint8_t> data, std::span<const uint8_t> signature) const {
-  if (type == Tls13SignatureScheme::rsa_pkcs1_sha256) {
+  switch(type) {
+  case Tls13SignatureScheme::rsa_pkcs1_sha256:
     return pubkey.validatePkcs1_5Signature<SHA2<256>>(data, signature);
-  } else if (type == Tls13SignatureScheme::rsa_pkcs1_sha384) {
+  case Tls13SignatureScheme::rsa_pkcs1_sha384:
     return pubkey.validatePkcs1_5Signature<SHA2<384>>(data, signature);
-  } else if (type == Tls13SignatureScheme::rsa_pkcs1_sha512) {
+  case Tls13SignatureScheme::rsa_pkcs1_sha512:
     return pubkey.validatePkcs1_5Signature<SHA2<512>>(data, signature);
-  } else if (type == Tls13SignatureScheme::rsa_pss_rsae_sha256 || type == Tls13SignatureScheme::rsa_pss_pss_sha256) {
+  case Tls13SignatureScheme::rsa_pss_rsae_sha256:
+  case Tls13SignatureScheme::rsa_pss_pss_sha256:
     return pubkey.validatePssSignature<SHA2<256>, Caligo::MGF1<SHA2<256>>>(data, signature);
-  } else if (type == Tls13SignatureScheme::rsa_pss_rsae_sha384 || type == Tls13SignatureScheme::rsa_pss_pss_sha384) {
+  case Tls13SignatureScheme::rsa_pss_rsae_sha384:
+  case Tls13SignatureScheme::rsa_pss_pss_sha384:
     return pubkey.validatePssSignature<SHA2<384>, Caligo::MGF1<SHA2<384>>>(data, signature);
-  } else if (type == Tls13SignatureScheme::rsa_pss_rsae_sha512 || type == Tls13SignatureScheme::rsa_pss_pss_sha512) {
+  case Tls13SignatureScheme::rsa_pss_rsae_sha512:
+  case Tls13SignatureScheme::rsa_pss_pss_sha512:
     return pubkey.validatePssSignature<SHA2<512>, Caligo::MGF1<SHA2<512>>>(data, signature);
-  } else {
+  default:
     return false;
   }
 }
 
+std::vector<uint8_t> RsaPrivateKey::sign(Tls13SignatureScheme type, std::span<const uint8_t> data) const {
+  switch(type) {
+  case Tls13SignatureScheme::rsa_pkcs1_sha256:
+    return privkey.signPkcs1_5Signature<SHA2<256>>(data);
+  case Tls13SignatureScheme::rsa_pkcs1_sha384:
+    return privkey.signPkcs1_5Signature<SHA2<384>>(data);
+  case Tls13SignatureScheme::rsa_pkcs1_sha512:
+    return privkey.signPkcs1_5Signature<SHA2<512>>(data);
+  case Tls13SignatureScheme::rsa_pss_rsae_sha256:
+  case Tls13SignatureScheme::rsa_pss_pss_sha256:
+    return privkey.signPssSignature<SHA2<256>, Caligo::MGF1<SHA2<256>>>(std::vector<uint8_t>(SHA2<256>(data)));
+  case Tls13SignatureScheme::rsa_pss_rsae_sha384:
+  case Tls13SignatureScheme::rsa_pss_pss_sha384:
+    return privkey.signPssSignature<SHA2<384>, Caligo::MGF1<SHA2<384>>>(std::vector<uint8_t>(SHA2<256>(data)));
+  case Tls13SignatureScheme::rsa_pss_rsae_sha512:
+  case Tls13SignatureScheme::rsa_pss_pss_sha512:
+    return privkey.signPssSignature<SHA2<512>, Caligo::MGF1<SHA2<512>>>(std::vector<uint8_t>(SHA2<256>(data)));
+  default:
+    return {};
+  }
+}
 
 template <typename T>
 T parseDer(asn1_view& data);
@@ -359,6 +384,35 @@ bool x509certificate::verify(x509certificate& issuer) {
   }
 
   return issuer.pubkey->validateSignature(type, cert, signature);
+}
+
+std::unique_ptr<PrivateKey> parsePrivateKey(std::span<const uint8_t> in, DataFormat format) {
+  std::vector<uint8_t> buffer;
+  if (format == DataFormat::Pem) {  // decode pem
+    std::string_view sv((const char*)in.data(), in.size());
+    size_t start = sv.find("-----BEGIN RSA PRIVATE KEY-----") + strlen("-----BEGIN RSA PRIVATE KEY-----");
+    size_t end = sv.find("-----END RSA PRIVATE KEY-----");
+    std::string_view base64bytes = sv.substr(start, end - start);
+    buffer = base64d(base64bytes);
+    in = buffer;
+  }
+  asn1_view in_data(in);
+  auto [root_id, root_data] = in_data.read();
+  if (root_id != asn1_id::sequence) FAIL();
+  asn1_view data(root_data);
+
+  /*bignum<32> version = */parseBignumDer<32>(data);
+  bignum<4096> modulus = parseBignumDer<4096>(data);
+  /*bignum<4096> publicExponent = */parseBignumDer<4096>(data);
+  bignum<4096> privateExponent = parseBignumDer<4096>(data);
+  /*
+  bignum<4096> prime1 = parseBignumDer<4096>(data);
+  bignum<4096> prime2 = parseBignumDer<4096>(data);
+  bignum<4096> exponent1 = parseBignumDer<4096>(data);
+  bignum<4096> exponent2 = parseBignumDer<4096>(data);
+  bignum<4096> coefficient = parseBignumDer<4096>(data);
+*/
+  return std::make_unique<RsaPrivateKey>(rsa_private_key<4096>(modulus, privateExponent));
 }
 
 }
