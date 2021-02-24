@@ -184,7 +184,6 @@ struct TlsState {
     while (exts.sizeleft()) {
       uint16_t key = exts.read16be();
       uint16_t size = exts.read16be();
-      printf("%d %d\n", key, size);
       reader vals = exts.get(size);
       if (exts.fail()) {
         state = TlsStateHandle::AuthenticationState::Disconnected; 
@@ -196,12 +195,10 @@ struct TlsState {
       {
         size_t bytes = vals.read16be();
         reader vals2 = vals.get(bytes);
-        printf("%s:%d keyshare\n", __FILE__, __LINE__);
         while (vals2.sizeleft()) {
           uint16_t keytype = vals2.read16be();
           uint16_t keysize = vals2.read16be();
           keyshares[keytype] = vals2.get(keysize);
-          printf("%s:%d %04x %d\n", __FILE__, __LINE__, keytype, keysize);
         }
       }
         break;
@@ -213,14 +210,11 @@ struct TlsState {
           signatureAlgorithms.insert(vals.read16be());
         }
       }
-        printf("%s:%d sigalgo\n", __FILE__, __LINE__);
         break;
       case Tls::Extension::psk_key_exchange_modes:
-        printf("%s:%d psk key exch\n", __FILE__, __LINE__);
         break;
       case Tls::Extension::server_name:
       {
-        printf("%s:%d servername\n", __FILE__, __LINE__);
         vals.read16be();
         vals.read8();
         size_t stringLength = vals.read16be();
@@ -236,16 +230,13 @@ struct TlsState {
           supportedGroups.insert(vals.read16be());
         }
       }
-        printf("%s:%d supported groups\n", __FILE__, __LINE__);
         break;
       case Tls::Extension::supported_versions: // tls version
         vals.read8();
         tlsver = vals.read16be();
-        printf("%s:%d tlsver %04x\n", __FILE__, __LINE__, tlsver);
         break;
       default: 
         fprintf(stderr, "Found %02X\n", key);
-        printf("%s:%d\n", __FILE__, __LINE__);
         break;
       }
     }
@@ -325,11 +316,6 @@ struct TlsState {
       c.addHandshakeData(cert); 
       return c.getHandshakeHash();
     }, cipher);
-    printf("hashwithcert ");
-    for (auto& c : hashWithCert) {
-      printf("%02x ", c);
-    }
-    printf("\n");
 
     // 4. CertificateVerify
     std::vector<uint8_t> certverify = ServerCertificateVerify(signatureAlgorithms, *privatekey, hashWithCert);
@@ -1011,8 +997,12 @@ namespace {
   } stateAllocator;
 }
 
-TlsStateHandle::TlsStateHandle(std::string hostname, uint64_t currentTime) {
-  state = new(stateAllocator.allocate()) TlsState(hostname, currentTime);
+TlsStateHandle TlsStateHandle::createServer(uint64_t currentTime) {
+  return TlsStateHandle{new(stateAllocator.allocate()) TlsState(currentTime)};
+}
+
+TlsStateHandle TlsStateHandle::createClient(std::string hostname, uint64_t currentTime) {
+  return TlsStateHandle{new(stateAllocator.allocate()) TlsState(hostname, currentTime)};
 }
 
 TlsStateHandle::~TlsStateHandle() {

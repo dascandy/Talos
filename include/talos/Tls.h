@@ -43,7 +43,6 @@ enum class TlsError : uint16_t {
 std::string to_string(TlsError error);
 
 struct TlsStateHandle {
-  TlsState* state;
   enum class AuthenticationState : uint8_t {
     ClientNew,
     WaitingForServerHello,
@@ -58,7 +57,8 @@ struct TlsStateHandle {
     Disconnected,
   };
 
-  TlsStateHandle(std::string hostname, uint64_t currentTime);
+  static TlsStateHandle createServer(uint64_t currentTime);
+  static TlsStateHandle createClient(std::string hostname, uint64_t currentTime);
   ~TlsStateHandle();
   TlsStateHandle(TlsStateHandle&& rhs) {
     state = rhs.state;
@@ -74,6 +74,11 @@ struct TlsStateHandle {
   std::vector<uint8_t> startupExchange(std::span<const uint8_t> data);
   std::vector<uint8_t> receive_decode(std::span<const uint8_t> data);
   std::vector<uint8_t> send_encode(std::span<const uint8_t> data);
+private:
+  TlsStateHandle(TlsState* state)
+  : state(state)
+  {}
+  TlsState* state;
 };
 
 }

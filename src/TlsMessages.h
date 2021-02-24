@@ -97,11 +97,6 @@ std::vector<uint8_t> ServerCertificateVerify(std::set<uint16_t> allowedAlgorithm
   std::vector<uint8_t> tosign;
   tosign.insert(tosign.end(), tls13_prefix.begin(), tls13_prefix.end());
   tosign.insert(tosign.end(), hash.begin(), hash.end());
-  printf("tosign ");
-  for (auto& c : tosign) {
-    printf("%02x ", c);
-  }
-  printf("\n");
 
   for (auto& type : preferredSignatureTypes) {
     if (not allowedAlgorithms.contains(type)) continue;
