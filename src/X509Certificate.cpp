@@ -67,6 +67,7 @@ bool RsaPubkey::validateSignature(Tls13SignatureScheme type, std::span<const uin
 }
 
 std::vector<uint8_t> RsaPrivateKey::sign(Tls13SignatureScheme type, std::span<const uint8_t> data) const {
+  std::vector<uint8_t> salt;
   switch(type) {
   case Tls13SignatureScheme::rsa_pkcs1_sha256:
     return privkey.signPkcs1_5Signature<SHA2<256>>(data);
@@ -76,13 +77,23 @@ std::vector<uint8_t> RsaPrivateKey::sign(Tls13SignatureScheme type, std::span<co
     return privkey.signPkcs1_5Signature<SHA2<512>>(data);
   case Tls13SignatureScheme::rsa_pss_rsae_sha256:
   case Tls13SignatureScheme::rsa_pss_pss_sha256:
-    return privkey.signPssSignature<SHA2<256>, Caligo::MGF1<SHA2<256>>>(std::vector<uint8_t>(SHA2<256>(data)));
+    salt.resize(32);
+#if 0
+    generate_random(salt);
+#else
+    salt = { 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22 };
+#endif
+    return privkey.signPssSignature<SHA2<256>, Caligo::MGF1<SHA2<256>>>(std::vector<uint8_t>(SHA2<256>(data)), salt);
   case Tls13SignatureScheme::rsa_pss_rsae_sha384:
   case Tls13SignatureScheme::rsa_pss_pss_sha384:
-    return privkey.signPssSignature<SHA2<384>, Caligo::MGF1<SHA2<384>>>(std::vector<uint8_t>(SHA2<256>(data)));
+    salt.resize(32);
+    generate_random(salt);
+    return privkey.signPssSignature<SHA2<384>, Caligo::MGF1<SHA2<384>>>(std::vector<uint8_t>(SHA2<256>(data)), salt);
   case Tls13SignatureScheme::rsa_pss_rsae_sha512:
   case Tls13SignatureScheme::rsa_pss_pss_sha512:
-    return privkey.signPssSignature<SHA2<512>, Caligo::MGF1<SHA2<512>>>(std::vector<uint8_t>(SHA2<256>(data)));
+    salt.resize(32);
+    generate_random(salt);
+    return privkey.signPssSignature<SHA2<512>, Caligo::MGF1<SHA2<512>>>(std::vector<uint8_t>(SHA2<256>(data)), salt);
   default:
     return {};
   }

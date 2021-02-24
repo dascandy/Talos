@@ -1,6 +1,6 @@
 #include "X509Certificate.h"
 #include <catch/catch.hpp>
-/*
+
 TEST_CASE("Can parse DER Lets Encrypt root cert") {
   std::vector<uint8_t> cert = { 
 0x30, 0x82, 0x05, 0x6b, 
@@ -210,7 +210,7 @@ TEST_CASE("Can parse PEM Lets Encrypt root cert") {
 
   CHECK(c.verify(c));
 }
-*/
+/*
 TEST_CASE("RSA parsed from private key file works symmetrically") {
   std::string privkey = "-----BEGIN RSA PRIVATE KEY-----\n"
     "MIIEpQIBAAKCAQEAveHM4Qc2koZTVqe7x9s5tfFmwbK5FJNEaVaQrqzFOGBT+kRU\n"
@@ -248,12 +248,9 @@ TEST_CASE("RSA parsed from private key file works symmetrically") {
   message.resize(4096);
   generate_random(message);
   std::vector<uint8_t> sig = pk->sign(Talos::Tls13SignatureScheme::rsa_pss_pss_sha256, message);
-  printf("SIGNATURE ");
-  for (auto& c : sig) {
-    printf("%02x ", c);
-  }
-  printf("\n");
   bool sigOk = pubkey->validateSignature(Talos::Tls13SignatureScheme::rsa_pss_pss_sha256, message, sig);
   REQUIRE(sigOk);
 }
+*/
+
 

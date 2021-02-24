@@ -103,7 +103,7 @@ std::string ulfheimPrivkey =
 "nhLGN+mMnVIcv2zEMS0/eNZr1j/0BtEdx+3IC6Eq+ONY0anZ4Irt57/5QeKgKn/L\n"
 "JPhfPySIPG4UmwE4gW8t79vfOKxnUu2fDD1ZXUYopan6EckACNH/\n"
 "-----END RSA PRIVATE KEY-----\n";
-/*
+
 TEST_CASE("Full ULFHEIM.NET TLS1.3 Client connection", "[TLS]") {
   std::span<uint8_t> cert((uint8_t*)ulfheimroot.data(), ulfheimroot.size());
   Talos::Truststore::Instance().addCertificate(parseCertificate(cert, Talos::DataFormat::Pem));
@@ -119,8 +119,7 @@ TEST_CASE("Full ULFHEIM.NET TLS1.3 Client connection", "[TLS]") {
   REQUIRE(state.state == Talos::TlsStateHandle::AuthenticationState::ClientOperational);
   REQUIRE(data == clientFinished);
 }
-*/
-/*
+
 TEST_CASE("Full ULFHEIM.NET TLS1.3 Server connection", "[TLS]") {
   std::span<uint8_t> cert((uint8_t*)ulfheimroot.data(), ulfheimroot.size());
 
@@ -137,4 +136,3 @@ TEST_CASE("Full ULFHEIM.NET TLS1.3 Server connection", "[TLS]") {
   REQUIRE(state.state == Talos::TlsStateHandle::AuthenticationState::ServerOperational);
   REQUIRE(data.empty()); // maybe ship back a few continuation tokens
 }
-*/
