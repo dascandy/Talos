@@ -78,11 +78,7 @@ std::vector<uint8_t> RsaPrivateKey::sign(Tls13SignatureScheme type, std::span<co
   case Tls13SignatureScheme::rsa_pss_rsae_sha256:
   case Tls13SignatureScheme::rsa_pss_pss_sha256:
     salt.resize(32);
-#if 0
     Caligo::generate_random(salt);
-#else
-    salt = { 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22 };
-#endif
     return privkey.signPssSignature<Caligo::SHA2<256>, Caligo::MGF1<Caligo::SHA2<256>>>(std::vector<uint8_t>(Caligo::SHA2<256>(data)), salt);
   case Tls13SignatureScheme::rsa_pss_rsae_sha384:
   case Tls13SignatureScheme::rsa_pss_pss_sha384:

@@ -128,7 +128,12 @@ TEST_CASE("Full ULFHEIM.NET TLS1.3 Server connection", "[TLS]") {
   state.privatekey = Talos::parsePrivateKey(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(ulfheimPrivkey.data()), ulfheimPrivkey.size()), Talos::DataFormat::Pem);
   state.certs = Talos::parseCertificatesPem(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(ulfheimCerts.data()), ulfheimCerts.size()));
 
+  // Preload random with these bytes to fix the random salt in the PSS signature
   std::vector<uint8_t> data;
+  Caligo::testValues.push_back(0x2222222222222222ULL);
+  Caligo::testValues.push_back(0x2222222222222222ULL);
+  Caligo::testValues.push_back(0x2222222222222222ULL);
+  Caligo::testValues.push_back(0x2222222222222222ULL);
   data = state.startupExchange(clientHelloBytes);
   REQUIRE(state.state == Talos::TlsStateHandle::AuthenticationState::WaitingForClientFinished);
   REQUIRE(data == serverHelloAndStuff);
