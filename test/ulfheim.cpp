@@ -111,12 +111,12 @@ TEST_CASE("Full ULFHEIM.NET TLS1.3 Client connection", "[TLS]") {
   Talos::TlsState state("example.ulfheim.net", 1550000000);
   state.privkey = Caligo::bignum<256>(privkey);
   std::vector<uint8_t> data;
-  REQUIRE(state.state == Talos::TlsStateHandle::AuthenticationState::ClientNew);
+  REQUIRE(state.state == Talos::AuthenticationState::ClientNew);
   data = state.startupExchange(data);
-  REQUIRE(state.state == Talos::TlsStateHandle::AuthenticationState::WaitingForServerHello);
+  REQUIRE(state.state == Talos::AuthenticationState::WaitingForServerHello);
   REQUIRE(data == clientHelloBytes);
   data = state.startupExchange(serverHelloAndStuff);
-  REQUIRE(state.state == Talos::TlsStateHandle::AuthenticationState::ClientOperational);
+  REQUIRE(state.state == Talos::AuthenticationState::ClientOperational);
   REQUIRE(data == clientFinished);
 }
 
@@ -135,9 +135,9 @@ TEST_CASE("Full ULFHEIM.NET TLS1.3 Server connection", "[TLS]") {
   Caligo::testValues.push_back(0x2222222222222222ULL);
   Caligo::testValues.push_back(0x2222222222222222ULL);
   data = state.startupExchange(clientHelloBytes);
-  REQUIRE(state.state == Talos::TlsStateHandle::AuthenticationState::WaitingForClientFinished);
+  REQUIRE(state.state == Talos::AuthenticationState::WaitingForClientFinished);
   REQUIRE(data == serverHelloAndStuff);
   data = state.startupExchange(clientFinished);
-  REQUIRE(state.state == Talos::TlsStateHandle::AuthenticationState::ServerOperational);
+  REQUIRE(state.state == Talos::AuthenticationState::ServerOperational);
   REQUIRE(data.empty()); // maybe ship back a few continuation tokens
 }

@@ -111,23 +111,23 @@ struct TlsState {
   std::string hostname;
   uint64_t currentTime;
   std::vector<uint8_t> recvbuffer;
-  TlsStateHandle::AuthenticationState state = TlsStateHandle::AuthenticationState::ClientNew;
+  AuthenticationState state = AuthenticationState::ClientNew;
   TlsError error;
 
   TlsState(uint64_t currentTime)
   : currentTime(currentTime)
-  , state(TlsStateHandle::AuthenticationState::ServerNew)
+  , state(AuthenticationState::ServerNew)
   {
   }
 
   TlsState(std::string hostname, uint64_t currentTime)
   : hostname(hostname)
   , currentTime(currentTime)
-  , state(TlsStateHandle::AuthenticationState::ClientNew)
+  , state(AuthenticationState::ClientNew)
   {
   }
 
-  TlsStateHandle::AuthenticationState getAuthenticationState() {
+  AuthenticationState getAuthenticationState() {
     return state;
   }
 
@@ -135,13 +135,17 @@ struct TlsState {
     return error;
   }
 
+  void TlsFail(TlsError err) {
+    state = AuthenticationState::Disconnected; 
+    error = err;
+  }
+
   std::vector<uint8_t> handleClientHello(std::span<const uint8_t> message, Caligo::ec_value& privkey) {
     reader r(message);
     uint8_t handshakeType = r.read8();
     uint32_t size = r.read24be();
     if ((Tls::Handshake)handshakeType != Tls::Handshake::client_hello || size != message.size() - 4) {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
-      printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
+      TlsFail(TlsError::unexpected_message);
       return {};
     }
 
@@ -152,7 +156,7 @@ struct TlsState {
     std::map<uint8_t, std::span<const uint8_t>> keyshares;
     uint16_t tlsver = r.read16be();
     if (tlsver != 0x0303) {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      TlsFail(TlsError::protocol_version);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return {};
     }
@@ -170,14 +174,14 @@ struct TlsState {
     uint8_t compressions = r.read8();
     uint8_t compressionType = r.read8();
     if (compressions != 1 || compressionType != 0) {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      TlsFail(TlsError::unsupported_extension);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return {};
     }
     uint16_t extLength = r.read16be();
     reader exts = r.get(extLength);
     if (r.fail()) {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      TlsFail(TlsError::decode_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return {};
     }
@@ -186,7 +190,7 @@ struct TlsState {
       uint16_t size = exts.read16be();
       reader vals = exts.get(size);
       if (exts.fail()) {
-        state = TlsStateHandle::AuthenticationState::Disconnected; 
+        TlsFail(TlsError::decode_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
         return {};
       }
@@ -242,19 +246,19 @@ struct TlsState {
     }
     
     if (tlsver != 0x0304) {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      TlsFail(TlsError::protocol_version);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return {};
     }
     if (!supportedGroups.contains(0x1D)) {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      TlsFail(TlsError::missing_extension);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return {};
     }
     // Need to check the actual algorithm our certificate(s) use
     /*
     if (!signatureAlgorithms.contains()) {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      TlsFail(TlsError::missing_extension);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return;
     }
@@ -262,20 +266,20 @@ struct TlsState {
 
     auto& keyshare_x25519 = keyshares[0x1D];
     if (keyshare_x25519.size() != 0x20) {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      TlsFail(TlsError::decode_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return {};
     }
     Caligo::ec_value sharedkey = Caligo::X25519(privkey, Caligo::ec_value(keyshare_x25519));
     if (sharedkey == Caligo::ec_value{0}) {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      TlsFail(TlsError::insufficient_security);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return {};
     }
     std::vector<uint8_t> sharedData = sharedkey.as_bytes();
     sharedkey.wipe();
     if (sharedData.empty()) {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      TlsFail(TlsError::internal_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return {};
     }
@@ -286,11 +290,11 @@ struct TlsState {
     } else if (cipherSuites.contains(0x1302)) {
       cipherSuite = 0x1302;
     } else {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      TlsFail(TlsError::insufficient_security);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return {};
     }
-    state = TlsStateHandle::AuthenticationState::WaitingForClientFinished;
+    state = AuthenticationState::WaitingForClientFinished;
 
     // Now prepare the care package for the client
     // 1. ServerHello
@@ -346,14 +350,14 @@ struct TlsState {
     uint8_t handshakeType = r.read8();
     uint32_t size = r.read24be();
     if ((Tls::Handshake)handshakeType != Tls::Handshake::server_hello || size != message.size() - 4) {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      TlsFail(TlsError::unexpected_message);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return;
     }
 
     uint16_t tlsver = r.read16be();
     if (tlsver != 0x0303) {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      TlsFail(TlsError::protocol_version);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return;
     }
@@ -376,7 +380,7 @@ struct TlsState {
     uint16_t extLength = r.read16be();
     reader exts = r.get(extLength);
     if (r.fail()) {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      TlsFail(TlsError::decode_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return;
     }
@@ -385,7 +389,7 @@ struct TlsState {
       uint16_t size = exts.read16be();
       reader vals = exts.get(size);
       if (exts.fail()) {
-        state = TlsStateHandle::AuthenticationState::Disconnected; 
+        TlsFail(TlsError::decode_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
         return;
       }
@@ -396,18 +400,18 @@ struct TlsState {
         uint16_t keytype = vals.read16be();
         uint16_t keysize = vals.read16be();
         if (keytype != 0x1D) {
-          state = TlsStateHandle::AuthenticationState::Disconnected; 
+          TlsFail(TlsError::unsupported_extension);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return;
         }
         if (keysize != 0x20) {
-          state = TlsStateHandle::AuthenticationState::Disconnected; 
+          TlsFail(TlsError::decode_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return;
         }
         Caligo::ec_value serverpub = Caligo::ec_value(vals.get(0x20));
         if (vals.fail()) {
-          state = TlsStateHandle::AuthenticationState::Disconnected; 
+          TlsFail(TlsError::decode_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return;
         }
@@ -415,7 +419,7 @@ struct TlsState {
         privkey.wipe();
         std::vector<uint8_t> sharedData = sharedkey.as_bytes();
         if (sharedkey == Caligo::ec_value{0}) {
-          state = TlsStateHandle::AuthenticationState::Disconnected; 
+          TlsFail(TlsError::insufficient_security);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return;
         }
@@ -428,7 +432,7 @@ struct TlsState {
           cipher = TLS13<Caligo::GCM, Caligo::AES<256>, Caligo::SHA2<384>>(sharedData, std::move(std::get<NullCipher>(cipher).handshakeSoFar));
           break;
         default: 
-          state = TlsStateHandle::AuthenticationState::Disconnected; 
+          TlsFail(TlsError::insufficient_security);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return;
         }
@@ -443,16 +447,16 @@ struct TlsState {
       }
     }
     if (tlsver == 0x0304) 
-      state = TlsStateHandle::AuthenticationState::WaitingForEncryptedExtensions;
+      state = AuthenticationState::WaitingForEncryptedExtensions;
     else {
-      state = TlsStateHandle::AuthenticationState::Disconnected; 
+      TlsFail(TlsError::protocol_version);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
     }
   }
 
   void handleEncryptedExtensions(std::span<const uint8_t> message) {
     (void)message;
-    state = TlsStateHandle::AuthenticationState::WaitingForServerCertificate;
+    state = AuthenticationState::WaitingForServerCertificate;
     // check for illegal ones or weird ones
   }
 
@@ -470,18 +474,21 @@ struct TlsState {
     }
 
     bool isTrustable = Truststore::Instance().trust(certs, currentTime);
-    if (isTrustable and certs[0].appliesTo(hostname)) {
-      remoteCert = std::move(certs[0]);
-      state = TlsStateHandle::AuthenticationState::WaitingForServerCertificateVerify;
-    } else {
-      state = TlsStateHandle::AuthenticationState::Disconnected;
+    if (not isTrustable) {
+      TlsFail(TlsError::certificate_unknown);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
+    } else if (not certs[0].appliesTo(hostname)) {
+      TlsFail(TlsError::bad_certificate);
+      printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
+    } else {
+      remoteCert = std::move(certs[0]);
+      state = AuthenticationState::WaitingForServerCertificateVerify;
     }
   }
 
   void handleCertificateVerify(std::span<const uint8_t> message) {
-    if (state != TlsStateHandle::AuthenticationState::WaitingForServerCertificateVerify) {
-      state = TlsStateHandle::AuthenticationState::Disconnected;
+    if (state != AuthenticationState::WaitingForServerCertificateVerify) {
+      TlsFail(TlsError::unexpected_message);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return;
     }
@@ -497,9 +504,9 @@ struct TlsState {
     std::span<const uint8_t> sig = message.subspan(4); // also skip over the size argument
 
     if (remoteCert.pubkey->validateSignature(sigAlgo, tosign, sig)) {
-      state = TlsStateHandle::AuthenticationState::WaitingForServerFinished;
+      state = AuthenticationState::WaitingForServerFinished;
     } else {
-      state = TlsStateHandle::AuthenticationState::Disconnected;
+      TlsFail(TlsError::handshake_failure);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
     }
   }
@@ -507,7 +514,7 @@ struct TlsState {
   std::vector<uint8_t> handleServerFinished(std::span<const uint8_t> message, std::span<const uint8_t> serverDigest) {
     std::vector<uint8_t> check = std::visit([&](auto& c) { return c.handshake_hmac(false); }, cipher);
     if (check.size() != serverDigest.size() || memcmp(check.data(), serverDigest.data(), check.size()) != 0) {
-      state = TlsStateHandle::AuthenticationState::Disconnected;
+      TlsFail(TlsError::handshake_failure);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return {};
     }
@@ -526,7 +533,7 @@ struct TlsState {
 
     std::vector<uint8_t> rv = encrypt_message(clientFinished, 0x16);
     std::visit([&](auto& c) { c.switchToApplicationSecret(); }, cipher);
-    state = TlsStateHandle::AuthenticationState::ClientOperational;
+    state = AuthenticationState::ClientOperational;
     return rv;
   }
 
@@ -535,84 +542,84 @@ struct TlsState {
       return c.handshake_hmac(true);
     }, cipher);
     if (check.size() != serverDigest.size() || memcmp(check.data(), serverDigest.data(), check.size()) != 0) {
-      state = TlsStateHandle::AuthenticationState::Disconnected;
+      TlsFail(TlsError::handshake_failure);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return {};
     }
 
     std::visit([&](auto& c) { c.addHandshakeData(message); c.switchToApplicationSecret(); }, cipher);
-    state = TlsStateHandle::AuthenticationState::ServerOperational;
+    state = AuthenticationState::ServerOperational;
     return {};
   }
 
   std::vector<uint8_t> handleStartupMessage(uint16_t messageType, std::span<const uint8_t> message) {
     switch(state) {
-      case TlsStateHandle::AuthenticationState::ServerNew:
+      case AuthenticationState::ServerNew:
       {
         std::visit([message = std::span<const uint8_t>(message)](auto& c){ c.addHandshakeData(message); }, cipher);
         if (messageType == 0x16) {
           std::vector<uint8_t> hello = handleClientHello(message, privkey);
           return hello;
         } else {
-          state = TlsStateHandle::AuthenticationState::Disconnected;
+          TlsFail(TlsError::unexpected_message);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
         }
       }
         return {};
-      case TlsStateHandle::AuthenticationState::WaitingForClientFinished:
-      case TlsStateHandle::AuthenticationState::WaitingForServerFinished:
+      case AuthenticationState::WaitingForClientFinished:
+      case AuthenticationState::WaitingForServerFinished:
       {
         if (messageType != 0x1716) {
-          state = TlsStateHandle::AuthenticationState::Disconnected;
+          TlsFail(TlsError::unexpected_message);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return {};
         }
         reader r(message);
         uint8_t handshakeType = r.read8();
         if ((Tls::Handshake)handshakeType != Tls::Handshake::finished) {
-          state = TlsStateHandle::AuthenticationState::Disconnected;
+          TlsFail(TlsError::unexpected_message);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return {};
         }
         uint32_t size = r.read24be();
         std::span<const uint8_t> m = r.get(size);
         if (r.fail()) {
-          state = TlsStateHandle::AuthenticationState::Disconnected;
+          TlsFail(TlsError::decode_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return {};
         }
-        return state == TlsStateHandle::AuthenticationState::WaitingForClientFinished ? handleClientFinished(message, m) : handleServerFinished(message, m);
+        return state == AuthenticationState::WaitingForClientFinished ? handleClientFinished(message, m) : handleServerFinished(message, m);
       }
-      case TlsStateHandle::AuthenticationState::ServerOperational:
+      case AuthenticationState::ServerOperational:
 
-      case TlsStateHandle::AuthenticationState::ClientOperational:
-      case TlsStateHandle::AuthenticationState::Disconnected:
+      case AuthenticationState::ClientOperational:
+      case AuthenticationState::Disconnected:
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
         std::terminate();
 
 
-      case TlsStateHandle::AuthenticationState::ClientNew:
+      case AuthenticationState::ClientNew:
       {
         std::vector<uint8_t> hello = clientHello(hostname, Caligo::X25519(privkey, Caligo::bignum<256>(9)));
         std::visit([&](auto& c){ std::span hs = hello; c.addHandshakeData(hs.subspan(5)); }, cipher);
-        state = TlsStateHandle::AuthenticationState::WaitingForServerHello;
+        state = AuthenticationState::WaitingForServerHello;
         return hello;
       }
-      case TlsStateHandle::AuthenticationState::WaitingForServerHello:
+      case AuthenticationState::WaitingForServerHello:
       {
         std::visit([message = std::span<const uint8_t>(message)](auto& c){ c.addHandshakeData(message); }, cipher);
         if (messageType == 0x16) {
           handleServerHello(message, privkey);
         } else {
-          state = TlsStateHandle::AuthenticationState::Disconnected;
+          TlsFail(TlsError::unexpected_message);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
         }
         return {};
       }
-      case TlsStateHandle::AuthenticationState::WaitingForEncryptedExtensions:
+      case AuthenticationState::WaitingForEncryptedExtensions:
       {
         if (messageType != 0x1716) {
-          state = TlsStateHandle::AuthenticationState::Disconnected;
+          TlsFail(TlsError::unexpected_message);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return {};
         }
@@ -620,14 +627,14 @@ struct TlsState {
         reader r(message);
         uint8_t handshakeType = r.read8();
         if ((Tls::Handshake)handshakeType != Tls::Handshake::encrypted_extensions) {
-          state = TlsStateHandle::AuthenticationState::Disconnected;
+          TlsFail(TlsError::unexpected_message);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return {};
         }
         uint32_t size = r.read24be();
         std::span<const uint8_t> m = r.get(size);
         if (r.fail()) {
-          state = TlsStateHandle::AuthenticationState::Disconnected;
+          TlsFail(TlsError::decode_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return {};
         }
@@ -636,10 +643,10 @@ struct TlsState {
       }
       break;
 
-      case TlsStateHandle::AuthenticationState::WaitingForServerCertificate:
+      case AuthenticationState::WaitingForServerCertificate:
       {
         if (messageType != 0x1716) {
-          state = TlsStateHandle::AuthenticationState::Disconnected;
+          TlsFail(TlsError::unexpected_message);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return {};
         }
@@ -649,7 +656,7 @@ struct TlsState {
         switch((Tls::Handshake)handshakeType) {
           case Tls::Handshake::certificate_request:
             // TODO: implement certificate request handling for client
-            state = TlsStateHandle::AuthenticationState::Disconnected;
+            TlsFail(TlsError::unsupported_extension);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
             return {};
           case Tls::Handshake::certificate:
@@ -657,7 +664,7 @@ struct TlsState {
             uint32_t size = r.read24be();
             std::span<const uint8_t> m = r.get(size);
             if (r.fail()) {
-              state = TlsStateHandle::AuthenticationState::Disconnected;
+              TlsFail(TlsError::decode_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
               return {};
             }
@@ -665,31 +672,31 @@ struct TlsState {
             return {};
           }
           default:
-            state = TlsStateHandle::AuthenticationState::Disconnected;
+            TlsFail(TlsError::unexpected_message);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
             return {};
         }
       }
         break;
 
-      case TlsStateHandle::AuthenticationState::WaitingForServerCertificateVerify:
+      case AuthenticationState::WaitingForServerCertificateVerify:
       {
         if (messageType != 0x1716) {
-          state = TlsStateHandle::AuthenticationState::Disconnected;
+          TlsFail(TlsError::unexpected_message);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return {};
         }
         reader r(message);
         uint8_t handshakeType = r.read8();
         if ((Tls::Handshake)handshakeType != Tls::Handshake::certificate_verify) {
-          state = TlsStateHandle::AuthenticationState::Disconnected;
+          TlsFail(TlsError::unexpected_message);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return {};
         }
         uint32_t size = r.read24be();
         std::span<const uint8_t> m = r.get(size);
         if (r.fail()) {
-          state = TlsStateHandle::AuthenticationState::Disconnected;
+          TlsFail(TlsError::decode_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return {};
         }
@@ -702,14 +709,14 @@ struct TlsState {
   }
 
   std::vector<uint8_t> startupExchange(std::span<const uint8_t> data) {
-    if (state == TlsStateHandle::AuthenticationState::ClientOperational ||
-        state == TlsStateHandle::AuthenticationState::ServerOperational ||
-        state == TlsStateHandle::AuthenticationState::Disconnected) {
+    if (state == AuthenticationState::ClientOperational ||
+        state == AuthenticationState::ServerOperational ||
+        state == AuthenticationState::Disconnected) {
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return {};
     }
     // All state changes are triggered by messages, except for the initial message.
-    if (state == TlsStateHandle::AuthenticationState::ClientNew) {
+    if (state == AuthenticationState::ClientNew) {
       return handleStartupMessage(0, {});
     }
     std::vector<uint8_t> rv;
@@ -724,8 +731,8 @@ struct TlsState {
       uint16_t tlsver = r.read16be();
       uint16_t size = r.read16be();
       if (tlsver != 0x0303 && 
-        not (tlsver == 0x0301 || state == TlsStateHandle::AuthenticationState::ServerNew)) {
-        state = TlsStateHandle::AuthenticationState::Disconnected;
+        not (tlsver == 0x0301 || state == AuthenticationState::ServerNew)) {
+        TlsFail(TlsError::protocol_version);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
         return {};
       }
@@ -739,16 +746,16 @@ struct TlsState {
             memcpy(aad.data(), recvbuffer.data(), 5);
             std::array<uint8_t, 16> tag;
             memcpy(tag.data(), data.data() + data.size() - 16, 16);
-            return c.Decrypt(data.subspan(0, data.size() - 16), aad, tag, state == TlsStateHandle::AuthenticationState::WaitingForClientFinished || state == TlsStateHandle::AuthenticationState::ServerOperational);
+            return c.Decrypt(data.subspan(0, data.size() - 16), aad, tag, state == AuthenticationState::WaitingForClientFinished || state == AuthenticationState::ServerOperational);
           }, cipher);
           if (!valid) {
-            state = TlsStateHandle::AuthenticationState::Disconnected;
+            TlsFail(TlsError::decrypt_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
             return {};
           }
           while (!ddata.empty() && ddata.back() == 0) ddata.pop_back();
           if (ddata.empty()) {
-            state = TlsStateHandle::AuthenticationState::Disconnected;
+            TlsFail(TlsError::decode_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
             return {};
           }
@@ -791,7 +798,7 @@ struct TlsState {
     aad[2] = 0x03;
     aad[3] = ((sizeNoHeader >> 8) & 0xFF);
     aad[4] = (sizeNoHeader & 0xFF);
-    auto [emsg, tag] = std::visit([&message, &aad, this](auto& c){ return c.Encrypt(message, aad, state == TlsStateHandle::AuthenticationState::WaitingForClientFinished || state == TlsStateHandle::AuthenticationState::ServerOperational);}, cipher);
+    auto [emsg, tag] = std::visit([&message, &aad, this](auto& c){ return c.Encrypt(message, aad, state == AuthenticationState::WaitingForClientFinished || state == AuthenticationState::ServerOperational);}, cipher);
     message = std::move(aad);
     message.resize(5+sizeNoHeader);
     memcpy(message.data() + 5, emsg.data(), emsg.size());
@@ -801,7 +808,7 @@ struct TlsState {
 
   // postcondition: a next receive_decode without argument will return nothing
   std::vector<uint8_t> receive_decode(std::span<const uint8_t> data) {
-    if (state != TlsStateHandle::AuthenticationState::ClientOperational) {
+    if (state != AuthenticationState::ClientOperational) {
       return {};
     }
 
@@ -815,7 +822,7 @@ struct TlsState {
       uint16_t messageType = r.read8();
       uint16_t tlsver = r.read16be();
       if (tlsver != 0x0303) {
-        state = TlsStateHandle::AuthenticationState::Disconnected;
+        TlsFail(TlsError::protocol_version);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
         return rv;
       }
@@ -832,16 +839,16 @@ struct TlsState {
           memcpy(aad.data(), recvbuffer.data(), 5);
           std::array<uint8_t, 16> tag;
           memcpy(tag.data(), data.data() + data.size() - 16, 16);
-          return c.Decrypt(data.subspan(0, data.size() - 16), aad, tag, state == TlsStateHandle::AuthenticationState::WaitingForClientFinished || state == TlsStateHandle::AuthenticationState::ServerOperational);
+          return c.Decrypt(data.subspan(0, data.size() - 16), aad, tag, state == AuthenticationState::WaitingForClientFinished || state == AuthenticationState::ServerOperational);
         }, cipher);
         if (!valid) {
-          state = TlsStateHandle::AuthenticationState::Disconnected;
+          TlsFail(TlsError::decrypt_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return rv;
         }
         while (!ddata.empty() && ddata.back() == 0) ddata.pop_back();
         if (ddata.empty()) {
-          state = TlsStateHandle::AuthenticationState::Disconnected;
+          TlsFail(TlsError::decode_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return rv;
         }
@@ -873,7 +880,7 @@ struct TlsState {
           case Tls::Handshake::key_update:
           default:
             // invalid message
-            state = TlsStateHandle::AuthenticationState::Disconnected;
+            TlsFail(TlsError::unexpected_message);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
             break;
           }
@@ -881,15 +888,14 @@ struct TlsState {
           break;
         case 0x1715:
           if (message.size() < 2) {
-            state = TlsStateHandle::AuthenticationState::Disconnected;
+            TlsFail(TlsError::decode_error);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
             break;
           }
 
           // Alert
           error = (TlsError)message[1];
-          state = TlsStateHandle::AuthenticationState::Disconnected;
-      printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
+          TlsFail((TlsError)error);
           break;
         //   Any records following a Finished message MUST be encrypted under the
         //   appropriate application traffic key as described in Section 7.2.  In
@@ -900,19 +906,17 @@ struct TlsState {
         case 0x16:
         case 0x17:
         case 0x1714: // This message is invalid in TLS 1.3 per spec
-          state = TlsStateHandle::AuthenticationState::Disconnected;
-      printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
+          TlsFail(TlsError::handshake_failure);
           break;
         default:
-          state = TlsStateHandle::AuthenticationState::Disconnected;
-      printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
+          TlsFail(TlsError::decode_error);
           break;
       }
     }
   }
 
   std::vector<uint8_t> send_encode(std::span<const uint8_t> data) {
-    if (state != TlsStateHandle::AuthenticationState::ClientOperational) return {};
+    if (state != AuthenticationState::ClientOperational) return {};
 
     return encrypt_message(data, 0x17);
   }
@@ -1009,7 +1013,7 @@ TlsStateHandle::~TlsStateHandle() {
   stateAllocator.free(state);
 }
 
-TlsStateHandle::AuthenticationState TlsStateHandle::getAuthenticationState() {
+AuthenticationState TlsStateHandle::getAuthenticationState() {
   return state->getAuthenticationState();
 }
 

@@ -42,21 +42,23 @@ enum class TlsError : uint16_t {
 
 std::string to_string(TlsError error);
 
-struct TlsStateHandle {
-  enum class AuthenticationState : uint8_t {
-    ClientNew,
-    WaitingForServerHello,
-    WaitingForEncryptedExtensions,
-    WaitingForServerCertificate,
-    WaitingForServerCertificateVerify,
-    WaitingForServerFinished,
-    ClientOperational,
-    ServerNew,
-    WaitingForClientFinished,
-    ServerOperational,
-    Disconnected,
-  };
+enum class AuthenticationState : uint8_t {
+  ClientNew,
+  WaitingForServerHello,
+  WaitingForEncryptedExtensions,
+  WaitingForServerCertificate,
+  WaitingForServerCertificateVerify,
+  WaitingForServerFinished,
+  ClientOperational,
+  ServerNew,
+  WaitingForClientFinished,
+  ServerOperational,
+  Disconnected,
+};
 
+std::string to_string(AuthenticationState state);
+
+struct TlsStateHandle {
   static TlsStateHandle createServer(uint64_t currentTime);
   static TlsStateHandle createClient(std::string hostname, uint64_t currentTime);
   ~TlsStateHandle();
