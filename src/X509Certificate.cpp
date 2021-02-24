@@ -47,20 +47,20 @@ object_id object_id::SignatureType::RsaSsaPss = std::span<const uint8_t>{{0x2a, 
 bool RsaPubkey::validateSignature(Tls13SignatureScheme type, std::span<const uint8_t> data, std::span<const uint8_t> signature) const {
   switch(type) {
   case Tls13SignatureScheme::rsa_pkcs1_sha256:
-    return pubkey.validatePkcs1_5Signature<SHA2<256>>(data, signature);
+    return pubkey.validatePkcs1_5Signature<Caligo::SHA2<256>>(data, signature);
   case Tls13SignatureScheme::rsa_pkcs1_sha384:
-    return pubkey.validatePkcs1_5Signature<SHA2<384>>(data, signature);
+    return pubkey.validatePkcs1_5Signature<Caligo::SHA2<384>>(data, signature);
   case Tls13SignatureScheme::rsa_pkcs1_sha512:
-    return pubkey.validatePkcs1_5Signature<SHA2<512>>(data, signature);
+    return pubkey.validatePkcs1_5Signature<Caligo::SHA2<512>>(data, signature);
   case Tls13SignatureScheme::rsa_pss_rsae_sha256:
   case Tls13SignatureScheme::rsa_pss_pss_sha256:
-    return pubkey.validatePssSignature<SHA2<256>, Caligo::MGF1<SHA2<256>>>(data, signature);
+    return pubkey.validatePssSignature<Caligo::SHA2<256>, Caligo::MGF1<Caligo::SHA2<256>>>(data, signature);
   case Tls13SignatureScheme::rsa_pss_rsae_sha384:
   case Tls13SignatureScheme::rsa_pss_pss_sha384:
-    return pubkey.validatePssSignature<SHA2<384>, Caligo::MGF1<SHA2<384>>>(data, signature);
+    return pubkey.validatePssSignature<Caligo::SHA2<384>, Caligo::MGF1<Caligo::SHA2<384>>>(data, signature);
   case Tls13SignatureScheme::rsa_pss_rsae_sha512:
   case Tls13SignatureScheme::rsa_pss_pss_sha512:
-    return pubkey.validatePssSignature<SHA2<512>, Caligo::MGF1<SHA2<512>>>(data, signature);
+    return pubkey.validatePssSignature<Caligo::SHA2<512>, Caligo::MGF1<Caligo::SHA2<512>>>(data, signature);
   default:
     return false;
   }
@@ -70,30 +70,30 @@ std::vector<uint8_t> RsaPrivateKey::sign(Tls13SignatureScheme type, std::span<co
   std::vector<uint8_t> salt;
   switch(type) {
   case Tls13SignatureScheme::rsa_pkcs1_sha256:
-    return privkey.signPkcs1_5Signature<SHA2<256>>(data);
+    return privkey.signPkcs1_5Signature<Caligo::SHA2<256>>(data);
   case Tls13SignatureScheme::rsa_pkcs1_sha384:
-    return privkey.signPkcs1_5Signature<SHA2<384>>(data);
+    return privkey.signPkcs1_5Signature<Caligo::SHA2<384>>(data);
   case Tls13SignatureScheme::rsa_pkcs1_sha512:
-    return privkey.signPkcs1_5Signature<SHA2<512>>(data);
+    return privkey.signPkcs1_5Signature<Caligo::SHA2<512>>(data);
   case Tls13SignatureScheme::rsa_pss_rsae_sha256:
   case Tls13SignatureScheme::rsa_pss_pss_sha256:
     salt.resize(32);
 #if 0
-    generate_random(salt);
+    Caligo::generate_random(salt);
 #else
     salt = { 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22 };
 #endif
-    return privkey.signPssSignature<SHA2<256>, Caligo::MGF1<SHA2<256>>>(std::vector<uint8_t>(SHA2<256>(data)), salt);
+    return privkey.signPssSignature<Caligo::SHA2<256>, Caligo::MGF1<Caligo::SHA2<256>>>(std::vector<uint8_t>(Caligo::SHA2<256>(data)), salt);
   case Tls13SignatureScheme::rsa_pss_rsae_sha384:
   case Tls13SignatureScheme::rsa_pss_pss_sha384:
-    salt.resize(32);
-    generate_random(salt);
-    return privkey.signPssSignature<SHA2<384>, Caligo::MGF1<SHA2<384>>>(std::vector<uint8_t>(SHA2<256>(data)), salt);
+    salt.resize(48);
+    Caligo::generate_random(salt);
+    return privkey.signPssSignature<Caligo::SHA2<384>, Caligo::MGF1<Caligo::SHA2<384>>>(std::vector<uint8_t>(Caligo::SHA2<256>(data)), salt);
   case Tls13SignatureScheme::rsa_pss_rsae_sha512:
   case Tls13SignatureScheme::rsa_pss_pss_sha512:
-    salt.resize(32);
-    generate_random(salt);
-    return privkey.signPssSignature<SHA2<512>, Caligo::MGF1<SHA2<512>>>(std::vector<uint8_t>(SHA2<256>(data)), salt);
+    salt.resize(64);
+    Caligo::generate_random(salt);
+    return privkey.signPssSignature<Caligo::SHA2<512>, Caligo::MGF1<Caligo::SHA2<512>>>(std::vector<uint8_t>(Caligo::SHA2<256>(data)), salt);
   default:
     return {};
   }
@@ -205,7 +205,7 @@ int parseDer<int>(asn1_view& data) {
 }
 
 template <size_t N>
-bignum<N> parseBignumDer(asn1_view& data) {
+Caligo::bignum<N> parseBignumDer(asn1_view& data) {
   auto [int_id, bytes] = data.read();
   if (int_id != asn1_id::integer) FAIL();
   std::vector<uint8_t> int_bytes;
@@ -218,16 +218,16 @@ bignum<N> parseBignumDer(asn1_view& data) {
   // return type though, so we don't like that.
   if (!int_bytes.empty() && int_bytes.back() == 0) int_bytes.pop_back();
 
-  return bignum<N>(int_bytes);
+  return Caligo::bignum<N>(int_bytes);
 }
 
 template <>
 RsaPubkey parseDer<RsaPubkey>(asn1_view& data) {
   auto [id, d2] = data.read();
   asn1_view d(d2);
-  bignum<4096> n = parseBignumDer<4096>(d);
-  bignum<4096> e = parseBignumDer<4096>(d);
-  return {rsa_public_key<4096>{n, e}};
+  Caligo::bignum<4096> n = parseBignumDer<4096>(d);
+  Caligo::bignum<4096> e = parseBignumDer<4096>(d);
+  return {Caligo::rsa_public_key<4096>{n, e}};
 }
 
 template <>
@@ -254,7 +254,7 @@ x509certificate parseCertificate(std::span<const uint8_t> in, DataFormat format)
     size_t start = sv.find("-----BEGIN CERTIFICATE-----") + strlen("-----BEGIN CERTIFICATE-----");
     size_t end = sv.find("-----END CERTIFICATE-----");
     std::string_view base64bytes = sv.substr(start, end - start);
-    buffer = base64d(base64bytes);
+    buffer = Caligo::base64d(base64bytes);
     in = buffer;
   }
   asn1_view in_data(in);
@@ -404,7 +404,7 @@ std::unique_ptr<PrivateKey> parsePrivateKey(std::span<const uint8_t> in, DataFor
     size_t start = sv.find("-----BEGIN RSA PRIVATE KEY-----") + strlen("-----BEGIN RSA PRIVATE KEY-----");
     size_t end = sv.find("-----END RSA PRIVATE KEY-----");
     std::string_view base64bytes = sv.substr(start, end - start);
-    buffer = base64d(base64bytes);
+    buffer = Caligo::base64d(base64bytes);
     in = buffer;
   }
   asn1_view in_data(in);
@@ -412,18 +412,18 @@ std::unique_ptr<PrivateKey> parsePrivateKey(std::span<const uint8_t> in, DataFor
   if (root_id != asn1_id::sequence) FAIL();
   asn1_view data(root_data);
 
-  /*bignum<32> version = */parseBignumDer<32>(data);
-  bignum<4096> modulus = parseBignumDer<4096>(data);
-  /*bignum<4096> publicExponent = */parseBignumDer<4096>(data);
-  bignum<4096> privateExponent = parseBignumDer<4096>(data);
+  /*Caligo::bignum<32> version = */parseBignumDer<32>(data);
+  Caligo::bignum<4096> modulus = parseBignumDer<4096>(data);
+  /*Caligo::bignum<4096> publicExponent = */parseBignumDer<4096>(data);
+  Caligo::bignum<4096> privateExponent = parseBignumDer<4096>(data);
   /*
-  bignum<4096> prime1 = parseBignumDer<4096>(data);
-  bignum<4096> prime2 = parseBignumDer<4096>(data);
-  bignum<4096> exponent1 = parseBignumDer<4096>(data);
-  bignum<4096> exponent2 = parseBignumDer<4096>(data);
-  bignum<4096> coefficient = parseBignumDer<4096>(data);
+  Caligo::bignum<4096> prime1 = parseBignumDer<4096>(data);
+  Caligo::bignum<4096> prime2 = parseBignumDer<4096>(data);
+  Caligo::bignum<4096> exponent1 = parseBignumDer<4096>(data);
+  Caligo::bignum<4096> exponent2 = parseBignumDer<4096>(data);
+  Caligo::bignum<4096> coefficient = parseBignumDer<4096>(data);
 */
-  return std::make_unique<RsaPrivateKey>(rsa_private_key<4096>(modulus, privateExponent));
+  return std::make_unique<RsaPrivateKey>(Caligo::rsa_private_key<4096>(modulus, privateExponent));
 }
 
 }

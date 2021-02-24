@@ -121,8 +121,8 @@ struct PublicKey {
 };
 
 struct RsaPubkey : PublicKey {
-  rsa_public_key<4096> pubkey;
-  RsaPubkey(rsa_public_key<4096> pubkey)
+  Caligo::rsa_public_key<4096> pubkey;
+  RsaPubkey(Caligo::rsa_public_key<4096> pubkey)
   : pubkey(pubkey)
   {}
   bool validateSignature(Tls13SignatureScheme type, std::span<const uint8_t> data, std::span<const uint8_t> signature) const override;
@@ -134,8 +134,8 @@ struct PrivateKey {
 };
 
 struct RsaPrivateKey : PrivateKey {
-  rsa_private_key<4096> privkey;
-  RsaPrivateKey(rsa_private_key<4096> privkey)
+  Caligo::rsa_private_key<4096> privkey;
+  RsaPrivateKey(Caligo::rsa_private_key<4096> privkey)
   : privkey(privkey)
   {}
   std::vector<uint8_t> sign(Tls13SignatureScheme type, std::span<const uint8_t> message) const override;
@@ -143,7 +143,7 @@ struct RsaPrivateKey : PrivateKey {
 
 struct x509certificate {
   std::vector<uint8_t> derCert;
-  bignum<128> serialNumber;
+  Caligo::bignum<128> serialNumber;
   // algorithm identifier?
   std::unordered_set<std::string> fqdns;
   std::string subject;

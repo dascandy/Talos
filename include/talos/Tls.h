@@ -1,9 +1,10 @@
 #pragma once
 
-#include "caligo/x25519.h"
 #include <cstring>
-#include "reader.h"
-#include "writer.h"
+#include <string>
+#include <cstdint>
+#include <vector>
+#include <span>
 
 namespace Talos {
 

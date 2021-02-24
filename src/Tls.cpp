@@ -36,13 +36,13 @@ void log_key(const char* name, std::span<const uint8_t> key) {
 
 template <template <typename> typename AEAD, typename Cipher, typename Hash>
 struct TLS13 {
-  secret<Hash> secret;
+  Caligo::secret<Hash> secret;
   Hash handshake;
   Hash original;
   AEAD<Cipher> s;
   AEAD<Cipher> c;
   TLS13(const std::vector<uint8_t>& sharedSecret, std::vector<uint8_t> handshakeSoFar)
-  : secret(HKDF_HandshakeSecret<Hash>(sharedSecret))
+  : secret(Caligo::HKDF_HandshakeSecret<Hash>(sharedSecret))
   , handshake(handshakeSoFar)
   , original(handshakeSoFar)
   , s(secret.template get_key_iv<Cipher>(original, false, true))
@@ -103,8 +103,8 @@ struct NullCipher {
 };
 
 struct TlsState {
-  ec_value privkey = ec_value::random_private_key();
-  std::variant<NullCipher, TLS13<GCM, AES<128>, SHA2<256>>, TLS13<GCM, AES<256>, SHA2<384>>> cipher;
+  Caligo::ec_value privkey = Caligo::ec_value::random_private_key();
+  std::variant<NullCipher, TLS13<Caligo::GCM, Caligo::AES<128>, Caligo::SHA2<256>>, TLS13<Caligo::GCM, Caligo::AES<256>, Caligo::SHA2<384>>> cipher;
   std::vector<x509certificate> certs;
   std::unique_ptr<PrivateKey> privatekey;
   x509certificate remoteCert;
@@ -135,7 +135,7 @@ struct TlsState {
     return error;
   }
 
-  std::vector<uint8_t> handleClientHello(std::span<const uint8_t> message, ec_value& privkey) {
+  std::vector<uint8_t> handleClientHello(std::span<const uint8_t> message, Caligo::ec_value& privkey) {
     reader r(message);
     uint8_t handshakeType = r.read8();
     uint32_t size = r.read24be();
@@ -275,8 +275,8 @@ struct TlsState {
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return {};
     }
-    ec_value sharedkey = X25519(privkey, ec_value(keyshare_x25519));
-    if (sharedkey == ec_value{0}) {
+    Caligo::ec_value sharedkey = Caligo::X25519(privkey, Caligo::ec_value(keyshare_x25519));
+    if (sharedkey == Caligo::ec_value{0}) {
       state = TlsStateHandle::AuthenticationState::Disconnected; 
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
       return {};
@@ -303,7 +303,7 @@ struct TlsState {
 
     // Now prepare the care package for the client
     // 1. ServerHello
-    std::vector<uint8_t> rv = serverHello(cipherSuite, 0x1D, X25519(privkey, bignum<256>(9)).as_bytes());
+    std::vector<uint8_t> rv = serverHello(cipherSuite, 0x1D, Caligo::X25519(privkey, Caligo::bignum<256>(9)).as_bytes());
     privkey.wipe();
     std::visit([&](auto& c){ c.addHandshakeData(std::span<const uint8_t>(rv.data() + 5, rv.size() - 5)); }, cipher);
     std::vector<uint8_t> changeCipherSpec{0x14, 3, 3, 0, 1, 1};
@@ -311,9 +311,9 @@ struct TlsState {
 
     // Include the serverhello into the handshake hash so far
     if (cipherSuite == 0x1302) {
-      cipher = TLS13<GCM, AES<256>, SHA2<384>>(sharedData, std::move(std::get<NullCipher>(cipher).handshakeSoFar));
+      cipher = TLS13<Caligo::GCM, Caligo::AES<256>, Caligo::SHA2<384>>(sharedData, std::move(std::get<NullCipher>(cipher).handshakeSoFar));
     } else if (cipherSuite == 0x1301) {
-      cipher = TLS13<GCM, AES<128>, SHA2<256>>(sharedData, std::move(std::get<NullCipher>(cipher).handshakeSoFar));
+      cipher = TLS13<Caligo::GCM, Caligo::AES<128>, Caligo::SHA2<256>>(sharedData, std::move(std::get<NullCipher>(cipher).handshakeSoFar));
     }
     // In one encrypted block:
     // 2. EncryptedExtensions
@@ -355,7 +355,7 @@ struct TlsState {
     return rv;
   }
 
-  void handleServerHello(std::span<const uint8_t> message, ec_value& privkey) {
+  void handleServerHello(std::span<const uint8_t> message, Caligo::ec_value& privkey) {
     reader r(message);
     uint8_t handshakeType = r.read8();
     uint32_t size = r.read24be();
@@ -419,16 +419,16 @@ struct TlsState {
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return;
         }
-        ec_value serverpub = ec_value(vals.get(0x20));
+        Caligo::ec_value serverpub = Caligo::ec_value(vals.get(0x20));
         if (vals.fail()) {
           state = TlsStateHandle::AuthenticationState::Disconnected; 
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return;
         }
-        ec_value sharedkey = X25519(privkey, serverpub);
+        Caligo::ec_value sharedkey = Caligo::X25519(privkey, serverpub);
         privkey.wipe();
         std::vector<uint8_t> sharedData = sharedkey.as_bytes();
-        if (sharedkey == ec_value{0}) {
+        if (sharedkey == Caligo::ec_value{0}) {
           state = TlsStateHandle::AuthenticationState::Disconnected; 
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
           return;
@@ -436,10 +436,10 @@ struct TlsState {
         sharedkey.wipe();
         switch(cipherSuite) {
         case 0x1301: 
-          cipher = TLS13<GCM, AES<128>, SHA2<256>>(sharedData, std::move(std::get<NullCipher>(cipher).handshakeSoFar));
+          cipher = TLS13<Caligo::GCM, Caligo::AES<128>, Caligo::SHA2<256>>(sharedData, std::move(std::get<NullCipher>(cipher).handshakeSoFar));
           break;
         case 0x1302: 
-          cipher = TLS13<GCM, AES<256>, SHA2<384>>(sharedData, std::move(std::get<NullCipher>(cipher).handshakeSoFar));
+          cipher = TLS13<Caligo::GCM, Caligo::AES<256>, Caligo::SHA2<384>>(sharedData, std::move(std::get<NullCipher>(cipher).handshakeSoFar));
           break;
         default: 
           state = TlsStateHandle::AuthenticationState::Disconnected; 
@@ -607,7 +607,7 @@ struct TlsState {
 
       case TlsStateHandle::AuthenticationState::ClientNew:
       {
-        std::vector<uint8_t> hello = clientHello(hostname, X25519(privkey, bignum<256>(9)));
+        std::vector<uint8_t> hello = clientHello(hostname, Caligo::X25519(privkey, Caligo::bignum<256>(9)));
         std::visit([&](auto& c){ std::span hs = hello; c.addHandshakeData(hs.subspan(5)); }, cipher);
         state = TlsStateHandle::AuthenticationState::WaitingForServerHello;
         return hello;

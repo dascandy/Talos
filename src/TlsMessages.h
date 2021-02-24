@@ -130,7 +130,7 @@ std::vector<uint8_t> Finished(std::span<const uint8_t> hmac) {
   return finished;
 }
 
-std::vector<uint8_t> clientHello(const std::string& hostname, const ec_value& pubkey) {
+std::vector<uint8_t> clientHello(const std::string& hostname, const Caligo::ec_value& pubkey) {
   writer header;
   header.add16be(0x0303);
   for (uint8_t n = 0; n < 32; n++) {

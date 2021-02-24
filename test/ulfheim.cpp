@@ -109,7 +109,7 @@ TEST_CASE("Full ULFHEIM.NET TLS1.3 Client connection", "[TLS]") {
   Talos::Truststore::Instance().addCertificate(parseCertificate(cert, Talos::DataFormat::Pem));
 
   Talos::TlsState state("example.ulfheim.net", 1550000000);
-  state.privkey = bignum<256>(privkey);
+  state.privkey = Caligo::bignum<256>(privkey);
   std::vector<uint8_t> data;
   REQUIRE(state.state == Talos::TlsStateHandle::AuthenticationState::ClientNew);
   data = state.startupExchange(data);
@@ -124,7 +124,7 @@ TEST_CASE("Full ULFHEIM.NET TLS1.3 Server connection", "[TLS]") {
   std::span<uint8_t> cert((uint8_t*)ulfheimroot.data(), ulfheimroot.size());
 
   Talos::TlsState state(1550000000);
-  state.privkey = bignum<256>(privkeyServer);
+  state.privkey = Caligo::bignum<256>(privkeyServer);
   state.privatekey = Talos::parsePrivateKey(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(ulfheimPrivkey.data()), ulfheimPrivkey.size()), Talos::DataFormat::Pem);
   state.certs = Talos::parseCertificatesPem(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(ulfheimCerts.data()), ulfheimCerts.size()));
 
