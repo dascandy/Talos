@@ -223,6 +223,7 @@ RsaPubkey parseDer<RsaPubkey>(asn1_view& data) {
   asn1_view d(d2);
   Caligo::bignum<4096> n = parseBignumDer<4096>(d);
   Caligo::bignum<4096> e = parseBignumDer<4096>(d);
+  if (e <= 16) throw std::runtime_error("Invalid public key; value less than 17 received");
   return {Caligo::rsa_public_key<4096>{n, e}};
 }
 
