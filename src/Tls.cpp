@@ -9,6 +9,7 @@
 #include <sys/mman.h>
 #include <cstdio>
 #include <set>
+#include <unordered_map>
 
 #include <writer.h>
 #include <reader.h>
@@ -32,6 +33,43 @@ void log_key(const char* name, std::span<const uint8_t> key) {
   fprintf(sslkeylog, "\n");
   fprintf(sslkeylog, "\n");
   fflush(sslkeylog);
+}
+
+struct TlsContext {
+  struct DomainNameEntry {
+    std::vector<x509certificate> certs;
+    std::unique_ptr<PrivateKey> privatekey;
+  };
+  void AddIdentity(std::string_view certificatesPem, std::string_view privateKeyPem) {
+    auto certs = Talos::parseCertificatesPem(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(certificatesPem.data()), certificatesPem.size()));
+    for (auto& domain : certs[0].fqdns) {
+      entries[domain] = DomainNameEntry{
+        Talos::parseCertificatesPem(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(certificatesPem.data()), certificatesPem.size())),
+        Talos::parsePrivateKey(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(privateKeyPem.data()), privateKeyPem.size()), Talos::DataFormat::Pem)
+      };
+    }
+  }
+  DomainNameEntry& GetEntry(std::string_view domainName) {
+    auto it = entries.find(std::string(domainName));
+    if (it == entries.end()) {
+      return *defaultEntry;
+    }
+    return it->second;
+  }
+  std::unordered_map<std::string, DomainNameEntry> entries;
+  DomainNameEntry* defaultEntry = nullptr;
+};
+
+TlsContextHandle::TlsContextHandle() {
+  context = new TlsContext();
+}
+
+TlsContextHandle::~TlsContextHandle() {
+  delete context;
+}
+
+void TlsContextHandle::AddIdentity(std::string_view certificatesPem, std::string_view privateKeyPem) {
+  context->AddIdentity(certificatesPem, privateKeyPem);
 }
 
 template <template <typename> typename AEAD, typename Cipher, typename Hash>
@@ -103,10 +141,9 @@ struct NullCipher {
 };
 
 struct TlsState {
+  TlsContext& context;
   Caligo::ec_value privkey = Caligo::ec_value::random_private_key();
   std::variant<NullCipher, TLS13<Caligo::GCM, Caligo::AES<128>, Caligo::SHA2<256>>, TLS13<Caligo::GCM, Caligo::AES<256>, Caligo::SHA2<384>>> cipher;
-  std::vector<x509certificate> certs;
-  std::unique_ptr<PrivateKey> privatekey;
   x509certificate remoteCert;
   std::string hostname;
   uint64_t currentTime;
@@ -114,14 +151,16 @@ struct TlsState {
   AuthenticationState state = AuthenticationState::ClientNew;
   TlsError error;
 
-  TlsState(uint64_t currentTime)
-  : currentTime(currentTime)
+  TlsState(TlsContextHandle& handle, uint64_t currentTime)
+  : context(*handle.context)
+  , currentTime(currentTime)
   , state(AuthenticationState::ServerNew)
   {
   }
 
-  TlsState(std::string hostname, uint64_t currentTime)
-  : hostname(hostname)
+  TlsState(TlsContextHandle& handle, std::string hostname, uint64_t currentTime)
+  : context(*handle.context)
+  , hostname(hostname)
   , currentTime(currentTime)
   , state(AuthenticationState::ClientNew)
   {
@@ -313,8 +352,10 @@ struct TlsState {
     // In one encrypted block:
     // 2. EncryptedExtensions
     std::vector<uint8_t> encexts = EncryptedExtensions();
+
     // 3. Certificate
-    std::vector<uint8_t> cert = Certificate(certs);
+    TlsContext::DomainNameEntry& myName = context.GetEntry(hostname);
+    std::vector<uint8_t> cert = Certificate(myName.certs);
     std::vector<uint8_t> hashWithCert = std::visit([&](auto& c){ 
       c.addHandshakeData(encexts); 
       c.addHandshakeData(cert); 
@@ -322,7 +363,7 @@ struct TlsState {
     }, cipher);
 
     // 4. CertificateVerify
-    std::vector<uint8_t> certverify = ServerCertificateVerify(signatureAlgorithms, *privatekey, hashWithCert);
+    std::vector<uint8_t> certverify = ServerCertificateVerify(signatureAlgorithms, *myName.privatekey, hashWithCert);
 
     std::vector<uint8_t> hashForFinished = std::visit([&](auto& c){ 
       c.addHandshakeData(certverify); 
@@ -1001,12 +1042,12 @@ namespace {
   } stateAllocator;
 }
 
-TlsStateHandle TlsStateHandle::createServer(uint64_t currentTime) {
-  return TlsStateHandle{new(stateAllocator.allocate()) TlsState(currentTime)};
+TlsStateHandle TlsStateHandle::createServer(TlsContextHandle& handle, uint64_t currentTime) {
+  return TlsStateHandle{new(stateAllocator.allocate()) TlsState(handle, currentTime)};
 }
 
-TlsStateHandle TlsStateHandle::createClient(std::string hostname, uint64_t currentTime) {
-  return TlsStateHandle{new(stateAllocator.allocate()) TlsState(hostname, currentTime)};
+TlsStateHandle TlsStateHandle::createClient(std::string hostname, TlsContextHandle& handle, uint64_t currentTime) {
+  return TlsStateHandle{new(stateAllocator.allocate()) TlsState(handle, hostname, currentTime)};
 }
 
 TlsStateHandle::~TlsStateHandle() {

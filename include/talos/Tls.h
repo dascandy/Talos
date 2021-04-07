@@ -58,9 +58,18 @@ enum class AuthenticationState : uint8_t {
 
 std::string to_string(AuthenticationState state);
 
+struct TlsContext;
+struct TlsContextHandle {
+  TlsContextHandle();
+  ~TlsContextHandle();
+  void AddIdentity(std::string_view certificatesPem, std::string_view privateKeyPem);
+  TlsContext* context;
+};
+
 struct TlsStateHandle {
-  static TlsStateHandle createServer(uint64_t currentTime);
-  static TlsStateHandle createClient(std::string hostname, uint64_t currentTime);
+public:
+  static TlsStateHandle createServer(TlsContextHandle& handle, uint64_t currentTime);
+  static TlsStateHandle createClient(std::string hostname, TlsContextHandle& handle, uint64_t currentTime);
   ~TlsStateHandle();
   TlsStateHandle(TlsStateHandle&& rhs) {
     state = rhs.state;
@@ -71,6 +80,7 @@ struct TlsStateHandle {
     rhs.state = nullptr;
     return *this;
   }
+
   AuthenticationState getAuthenticationState();
   TlsError getError();
   std::vector<uint8_t> startupExchange(std::span<const uint8_t> data);

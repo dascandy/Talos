@@ -105,10 +105,11 @@ std::string ulfheimPrivkey =
 "-----END RSA PRIVATE KEY-----\n";
 
 TEST_CASE("Full ULFHEIM.NET TLS1.3 Client connection", "[TLS]") {
+  Talos::TlsContextHandle context;
   std::span<uint8_t> cert((uint8_t*)ulfheimroot.data(), ulfheimroot.size());
   Talos::Truststore::Instance().addCertificate(parseCertificate(cert, Talos::DataFormat::Pem));
 
-  Talos::TlsState state("example.ulfheim.net", 1550000000);
+  Talos::TlsState state(context, "example.ulfheim.net", 1550000000);
   state.privkey = Caligo::bignum<256>(privkey);
   std::vector<uint8_t> data;
   REQUIRE(state.state == Talos::AuthenticationState::ClientNew);
@@ -121,12 +122,11 @@ TEST_CASE("Full ULFHEIM.NET TLS1.3 Client connection", "[TLS]") {
 }
 
 TEST_CASE("Full ULFHEIM.NET TLS1.3 Server connection", "[TLS]") {
-  std::span<uint8_t> cert((uint8_t*)ulfheimroot.data(), ulfheimroot.size());
+  Talos::TlsContextHandle context;
+  context.AddIdentity(ulfheimCerts, ulfheimPrivkey);
 
-  Talos::TlsState state(1550000000);
+  Talos::TlsState state(context, 1550000000);
   state.privkey = Caligo::bignum<256>(privkeyServer);
-  state.privatekey = Talos::parsePrivateKey(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(ulfheimPrivkey.data()), ulfheimPrivkey.size()), Talos::DataFormat::Pem);
-  state.certs = Talos::parseCertificatesPem(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(ulfheimCerts.data()), ulfheimCerts.size()));
 
   // Preload random with these bytes to fix the random salt in the PSS signature
   std::vector<uint8_t> data;
