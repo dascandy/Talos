@@ -1,7 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <cstdint>
-
+/*
 std::ostream& operator<<(std::ostream& os, const std::vector<uint8_t>& v) {
   os << "[";
   for (auto& c : v) {
@@ -141,3 +141,4 @@ TEST_CASE("Full ULFHEIM.NET TLS1.3 Server connection", "[TLS]") {
   REQUIRE(state.state == Talos::AuthenticationState::ServerOperational);
   REQUIRE(data.empty()); // maybe ship back a few continuation tokens
 }
+*/

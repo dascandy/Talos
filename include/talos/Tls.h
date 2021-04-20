@@ -69,7 +69,7 @@ struct TlsContextHandle {
 struct TlsStateHandle {
 public:
   static TlsStateHandle createServer(TlsContextHandle& handle, uint64_t currentTime);
-  static TlsStateHandle createClient(std::string hostname, TlsContextHandle& handle, uint64_t currentTime);
+  static TlsStateHandle createClient(TlsContextHandle& handle, std::string hostname, uint64_t currentTime);
   ~TlsStateHandle();
   TlsStateHandle(TlsStateHandle&& rhs) {
     state = rhs.state;

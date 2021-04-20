@@ -15,14 +15,14 @@
 
 namespace Talos {
 
-std::vector<uint8_t> serverHello(uint16_t cipherSuite, uint16_t group, std::span<const uint8_t> keyshare) {
+std::vector<uint8_t> serverHello(uint16_t cipherSuite, uint16_t group, std::span<const uint8_t> sessionId, std::span<const uint8_t> keyshare) {
   writer header;
   header.add16be(0x0303);
   for (uint8_t n = 0x70; n < 0x90; n++) {
     header.add8(n);
   }
-  header.add8(32);
-  for (uint8_t n = 224; n != 0; n++) {
+  header.add8((uint8_t)sessionId.size());
+  for (auto n : sessionId) {
     header.add8(n);
   }
   header.add16be(cipherSuite);
@@ -30,17 +30,17 @@ std::vector<uint8_t> serverHello(uint16_t cipherSuite, uint16_t group, std::span
 
   writer extensions;
 
+  // Supported versions
+  extensions.add16be(0x2B);
+  extensions.add16be(0x02);
+  extensions.add16be(0x0304);
+
   // Key share our key back
   extensions.add16be(0x33);
   extensions.add16be(0x24);
   extensions.add16be(group);
   extensions.add16be(0x20);
   extensions.add(keyshare);
-
-  // Supported versions
-  extensions.add16be(0x2B);
-  extensions.add16be(0x02);
-  extensions.add16be(0x0304);
 
   header.add16be(extensions.size());
   header.add(extensions);
@@ -55,11 +55,31 @@ std::vector<uint8_t> serverHello(uint16_t cipherSuite, uint16_t group, std::span
   return std::move(message);
 }
 
-std::vector<uint8_t> EncryptedExtensions() {
+std::vector<uint8_t> EncryptedExtensions(std::set<std::string> alpnProtocols) {
+  writer exts;
+  if (!alpnProtocols.empty()) {
+    static std::vector<std::string> supported = { "http/1.1" };
+    std::string selectedProtocol;
+    for (auto proto : supported) {
+      if (alpnProtocols.contains(proto)) {
+        selectedProtocol = proto;
+        break;
+      }
+    }
+
+    if (not selectedProtocol.empty()) {
+      exts.add16be((uint16_t)Tls::Extension::application_layer_protocol_negotiation);
+      exts.add16be(selectedProtocol.size() + 3);
+      exts.add16be(selectedProtocol.size() + 1);
+      exts.add8(selectedProtocol.size());
+      exts.add(selectedProtocol);
+    }
+  }
   writer ee;
   ee.add8(0x8);
-  ee.add24be(2);
-  ee.add16be(0);
+  ee.add24be(exts.size() + 2);
+  ee.add16be(exts.size());
+  ee.add(exts);
   return std::move(ee);
 }
 
@@ -139,7 +159,7 @@ std::vector<uint8_t> clientHello(const std::string& hostname, const Caligo::ec_v
   writer suites;
   suites.add16be(0x1301); // aes128sha256
   suites.add16be(0x1302); // aes256sha384
-  suites.add16be(0x1303); // poly1305 (not actually)
+//  suites.add16be(0x1303); // poly1305 (not actually)
   header.add16be(suites.size());
   header.add(suites);
 
@@ -176,7 +196,7 @@ std::vector<uint8_t> clientHello(const std::string& hostname, const Caligo::ec_v
   sigalgs.add16be(0x0501); // RSA-PKCS1-SHA384
   sigalgs.add16be(0x0806); // RSA-PSS-RSAE-SHA512
   sigalgs.add16be(0x0601); // RSA-PKCS1-SHA512
-  sigalgs.add16be(0x0201); // ulfheim special
+//  sigalgs.add16be(0x0201); // ulfheim special
   extensions.add16be(0x0d);
   extensions.add16be(sigalgs.size() + 2);
   extensions.add16be(sigalgs.size());

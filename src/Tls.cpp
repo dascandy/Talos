@@ -47,6 +47,9 @@ struct TlsContext {
         Talos::parseCertificatesPem(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(certificatesPem.data()), certificatesPem.size())),
         Talos::parsePrivateKey(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(privateKeyPem.data()), privateKeyPem.size()), Talos::DataFormat::Pem)
       };
+      if (not defaultEntry) {
+        defaultEntry = &entries[domain];
+      }
     }
   }
   DomainNameEntry& GetEntry(std::string_view domainName) {
@@ -146,6 +149,7 @@ struct TlsState {
   std::variant<NullCipher, TLS13<Caligo::GCM, Caligo::AES<128>, Caligo::SHA2<256>>, TLS13<Caligo::GCM, Caligo::AES<256>, Caligo::SHA2<384>>> cipher;
   x509certificate remoteCert;
   std::string hostname;
+  std::set<std::string> alpnProtocols;
   uint64_t currentTime;
   std::vector<uint8_t> recvbuffer;
   AuthenticationState state = AuthenticationState::ClientNew;
@@ -194,6 +198,7 @@ struct TlsState {
     std::set<uint16_t> signatureAlgorithms = { };
     std::map<uint8_t, std::span<const uint8_t>> keyshares;
     uint16_t tlsver = r.read16be();
+    std::string alpnProtocol;
     if (tlsver != 0x0303) {
       TlsFail(TlsError::protocol_version);
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
@@ -203,7 +208,7 @@ struct TlsState {
     r.get(32); // 'random' data, ignore
 
     uint8_t sessSize = r.read8();
-    r.get(sessSize); // ignore session ID; just some more TLS1.2 make pretend
+    std::span<const uint8_t> sessionId(r.get(sessSize));
   
     uint16_t cipherSuiteSize = r.read16be();
     for (size_t n = 0; n < cipherSuiteSize / 2; n++) {
@@ -251,6 +256,23 @@ struct TlsState {
         uint16_t count = vals.read16be();
         for (int n = 0; n < count; n += 2) {
           signatureAlgorithms.insert(vals.read16be());
+        }
+      }
+        break;
+      case Tls::Extension::application_layer_protocol_negotiation:
+      {
+        size_t bytes = vals.read16be();
+        reader alpn = vals.get(bytes);
+        while (alpn.sizeleft()) {
+          size_t bytesValue = alpn.read8();
+          std::string value(alpn.getString(bytesValue));
+          if (alpn.fail()) break;
+          alpnProtocols.insert(value);
+        }
+        if (alpn.fail()) {
+          TlsFail(TlsError::decode_error);
+          printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
+          return {};
         }
       }
         break;
@@ -337,7 +359,7 @@ struct TlsState {
 
     // Now prepare the care package for the client
     // 1. ServerHello
-    std::vector<uint8_t> rv = serverHello(cipherSuite, 0x1D, Caligo::X25519(privkey, Caligo::bignum<256>(9)).as_bytes());
+    std::vector<uint8_t> rv = serverHello(cipherSuite, 0x1D, sessionId, Caligo::X25519(privkey, Caligo::bignum<256>(9)).as_bytes());
     privkey.wipe();
     std::visit([&](auto& c){ c.addHandshakeData(std::span<const uint8_t>(rv.data() + 5, rv.size() - 5)); }, cipher);
     std::vector<uint8_t> changeCipherSpec{0x14, 3, 3, 0, 1, 1};
@@ -351,7 +373,7 @@ struct TlsState {
     }
     // In one encrypted block:
     // 2. EncryptedExtensions
-    std::vector<uint8_t> encexts = EncryptedExtensions();
+    std::vector<uint8_t> encexts = EncryptedExtensions(alpnProtocols);
 
     // 3. Certificate
     TlsContext::DomainNameEntry& myName = context.GetEntry(hostname);
@@ -409,8 +431,10 @@ struct TlsState {
       0xC2, 0xA2, 0x11, 0x16, 0x7A, 0xBB, 0x8C, 0x5E, 0x07, 0x9E, 0x09, 0xE2, 0xC8, 0xA8, 0x33, 0x9C, 
     };
     if (memcmp(helloRetryRequest.data(), serverRandom.data(), 32) == 0) {
-      // Handle Hello Retry
-      std::terminate();
+      TlsFail(TlsError::unsupported_extension);
+      printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
+      return;
+      // TODO: Handle this
     }
 
     uint8_t sessSize = r.read8();
@@ -578,7 +602,7 @@ struct TlsState {
     return rv;
   }
 
-  std::vector<uint8_t> handleClientFinished(std::span<const uint8_t> message, std::span<const uint8_t> serverDigest) {
+  std::vector<uint8_t> handleClientFinished(std::span<const uint8_t> /*message*/, std::span<const uint8_t> serverDigest) {
     std::vector<uint8_t> check = std::visit([&](auto& c) -> std::vector<uint8_t> { 
       return c.handshake_hmac(true);
     }, cipher);
@@ -588,7 +612,7 @@ struct TlsState {
       return {};
     }
 
-    std::visit([&](auto& c) { c.addHandshakeData(message); c.switchToApplicationSecret(); }, cipher);
+    std::visit([&](auto& c) { c.switchToApplicationSecret(); }, cipher);
     state = AuthenticationState::ServerOperational;
     return {};
   }
@@ -777,50 +801,48 @@ struct TlsState {
       printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
         return {};
       }
-      if (r.sizeleft() >= size) {
-        auto data = r.get(size);
-        std::vector<uint8_t> messageBuffer;
-        if (messageType == 0x17) {
-          auto [ddata, valid] = std::visit([&](auto& c){ 
-            std::vector<uint8_t> aad;
-            aad.resize(5);
-            memcpy(aad.data(), recvbuffer.data(), 5);
-            std::array<uint8_t, 16> tag;
-            memcpy(tag.data(), data.data() + data.size() - 16, 16);
-            return c.Decrypt(data.subspan(0, data.size() - 16), aad, tag, state == AuthenticationState::WaitingForClientFinished || state == AuthenticationState::ServerOperational);
-          }, cipher);
-          if (!valid) {
-            TlsFail(TlsError::decrypt_error);
-      printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
-            return {};
-          }
-          while (!ddata.empty() && ddata.back() == 0) ddata.pop_back();
-          if (ddata.empty()) {
-            TlsFail(TlsError::decode_error);
-      printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
-            return {};
-          }
-          messageType = 0x1700 | ddata.back();
-          ddata.pop_back();
-          reader dr(ddata);
-          while (dr.sizeleft() >= 4) {
-            reader r2 = dr;
-            r2.read8();
-            uint32_t size = r2.read24be();
-            std::span<const uint8_t> m = dr.get(size + 4);
-            auto feedback = handleStartupMessage(messageType, m);
-            rv.insert(rv.end(), feedback.begin(), feedback.end());
-          }
-        } else if (messageType == 0x14) {
-          // Legacy TLS1.2 compat message; ignore
-        } else if (messageType == 0x16) {
-          messageBuffer = std::vector<uint8_t>(data.data(), data.data() + data.size());
-          auto feedback = handleStartupMessage(messageType, messageBuffer);
+      if (r.sizeleft() < size) break;
+      auto data = r.get(size);
+      std::vector<uint8_t> messageBuffer;
+      if (messageType == 0x17) {
+        auto [ddata, valid] = std::visit([&](auto& c){ 
+          std::vector<uint8_t> aad;
+          aad.resize(5);
+          memcpy(aad.data(), recvbuffer.data(), 5);
+          std::array<uint8_t, 16> tag;
+          memcpy(tag.data(), data.data() + data.size() - 16, 16);
+          return c.Decrypt(data.subspan(0, data.size() - 16), aad, tag, state == AuthenticationState::WaitingForClientFinished || state == AuthenticationState::ServerOperational);
+        }, cipher);
+        if (!valid) {
+          TlsFail(TlsError::decrypt_error);
+          printf("%s:%d DISCONNECTED\n", __FILE__, __LINE__);
+          return {};
+        }
+        while (!ddata.empty() && ddata.back() == 0) ddata.pop_back();
+        if (ddata.empty()) {
+          TlsFail(TlsError::decode_error);
+          return {};
+        }
+        messageType = 0x1700 | ddata.back();
+        ddata.pop_back();
+        reader dr(ddata);
+        while (dr.sizeleft() >= 4) {
+          reader r2 = dr;
+          r2.read8();
+          uint32_t size = r2.read24be();
+          std::span<const uint8_t> m = dr.get(size + 4);
+          auto feedback = handleStartupMessage(messageType, m);
           rv.insert(rv.end(), feedback.begin(), feedback.end());
         }
-        memmove(recvbuffer.data(), recvbuffer.data() + 5 + size, recvbuffer.size() - size - 5);
-        recvbuffer.resize(recvbuffer.size() - size - 5);
+      } else if (messageType == 0x14) {
+        // Legacy TLS1.2 compat message; ignore
+      } else if (messageType == 0x16) {
+        messageBuffer = std::vector<uint8_t>(data.data(), data.data() + data.size());
+        auto feedback = handleStartupMessage(messageType, messageBuffer);
+        rv.insert(rv.end(), feedback.begin(), feedback.end());
       }
+      memmove(recvbuffer.data(), recvbuffer.data() + 5 + size, recvbuffer.size() - size - 5);
+      recvbuffer.resize(recvbuffer.size() - size - 5);
     }
     return rv;
   }
@@ -849,7 +871,8 @@ struct TlsState {
 
   // postcondition: a next receive_decode without argument will return nothing
   std::vector<uint8_t> receive_decode(std::span<const uint8_t> data) {
-    if (state != AuthenticationState::ClientOperational) {
+    if (state != AuthenticationState::ClientOperational &&
+        state != AuthenticationState::ServerOperational) {
       return {};
     }
 
@@ -947,9 +970,11 @@ struct TlsState {
         case 0x16:
         case 0x17:
         case 0x1714: // This message is invalid in TLS 1.3 per spec
+        printf("%s:%d\n", __FILE__, __LINE__);
           TlsFail(TlsError::handshake_failure);
           break;
         default:
+        printf("%s:%d\n", __FILE__, __LINE__);
           TlsFail(TlsError::decode_error);
           break;
       }
@@ -957,7 +982,9 @@ struct TlsState {
   }
 
   std::vector<uint8_t> send_encode(std::span<const uint8_t> data) {
-    if (state != AuthenticationState::ClientOperational) return {};
+    if (state != AuthenticationState::ClientOperational &&
+      state != AuthenticationState::ServerOperational) 
+      return {};
 
     return encrypt_message(data, 0x17);
   }
@@ -1046,7 +1073,7 @@ TlsStateHandle TlsStateHandle::createServer(TlsContextHandle& handle, uint64_t c
   return TlsStateHandle{new(stateAllocator.allocate()) TlsState(handle, currentTime)};
 }
 
-TlsStateHandle TlsStateHandle::createClient(std::string hostname, TlsContextHandle& handle, uint64_t currentTime) {
+TlsStateHandle TlsStateHandle::createClient(TlsContextHandle& handle, std::string hostname, uint64_t currentTime) {
   return TlsStateHandle{new(stateAllocator.allocate()) TlsState(handle, hostname, currentTime)};
 }
 
